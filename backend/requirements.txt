@@ -1,0 +1,37 @@
+# FastAPI
+fastapi
+uvicorn[standard]
+python-multipart
+
+# LangChain / LangGraph
+langchain
+langchain-core
+langchain-google-genai
+langgraph
+langgraph-checkpoint-sqlite
+langchain-community
+langsmith
+langgraph-checkpoint-postgres
+psycopg[binary]
+psycopg-pool
+
+# Tools
+langchain-tavily
+yfinance
+
+# Database
+sqlalchemy
+aiosqlite
+
+# Pydantic / Config
+pydantic
+pydantic-settings
+python-dotenv
+
+# HTTP
+httpx
+beautifulsoup4
+
+# Utilities
+python-jose
+tenacity
