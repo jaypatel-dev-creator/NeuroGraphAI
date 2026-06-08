@@ -15,19 +15,19 @@ class Base(DeclarativeBase):#base class from which all tables will be inheriting
 if settings.database_url: # production mode==> postgres(supabase) 
     engine = create_async_engine(
         settings.database_url,
-        echo=False, # to avoig sqlite from printing sql queries it executes in terminal 
+        echo=False, # dont print every sql query in terminal
         pool_pre_ping=True,#Before using a connection from the pool, ping the DB to check if it's still alive. Prevents stale connection errors after inactivity.
     )
 else:
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{settings.sqlite_db_path}", #location of sqlite 
-        echo=False,# to avoig sqlite from printing sql queries it executes in terminal 
+        echo=False,# dont print every sql querry in terminal
         connect_args={"check_same_thread": False}, # by def , sqlite allows only cpu thread that created the connection to use it, since faltapi uses multiple threads, so check_same_thread=False, sqllite now allows any thread 
     )
 
 #creating session maker
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
-    class_=AsyncSession,
+    class_=AsyncSession, #create sessions that supports async await (cause entire FASTAPI is async)
     expire_on_commit=False,
 )

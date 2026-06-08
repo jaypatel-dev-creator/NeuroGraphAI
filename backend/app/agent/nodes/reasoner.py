@@ -26,7 +26,7 @@ Never respond with only a MEMORY_UPDATE line. Always say something meaningful to
 
 You have access to the following tools:
 - calculator: evaluate math expressions
-- tavily_search_results_json: search the web for current information
+- tavily_search: search the web for current information
 - weather: get current weather for any city
 - finance: get stock prices and financial info
 - get_datetime: get the current date and time

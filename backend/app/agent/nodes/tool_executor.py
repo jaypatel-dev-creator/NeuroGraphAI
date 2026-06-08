@@ -1,4 +1,3 @@
-import json
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 
@@ -13,9 +12,6 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict) -> dict:
     tool_calls = last_message.tool_calls
 
     results = []
-    last_tool_name = ""
-    last_tool_input = {}
-    last_tool_output = ""
 
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
@@ -30,7 +26,6 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict) -> dict:
             output = f"Tool '{tool_name}' not found."
         else:
             try:
-                # handle both async and sync tools
                 if hasattr(tool, "ainvoke"):
                     output = await tool.ainvoke(tool_input)
                 else:
@@ -49,14 +44,4 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict) -> dict:
             )
         )
 
-        # track last tool for streaming to frontend
-        last_tool_name = tool_name
-        last_tool_input = tool_input
-        last_tool_output = output
-
-    return {
-        "messages": results,
-        "last_tool_name": last_tool_name,
-        "last_tool_input": last_tool_input,
-        "last_tool_output": last_tool_output,
-    }
+    return {"messages": results}

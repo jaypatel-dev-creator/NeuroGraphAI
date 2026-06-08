@@ -17,11 +17,11 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"# in prod, on render dashboard => production
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:5173" # in prod, on render dashboard, set to deployed vercel url 
 
     # DB — empty 
-    database_url: str = "" # for local ==> empty (sqlite) , for prod , on render dashboard, postgre (supabase) url 
-    sqlite_db_path: str = "./data/neurograph.db"
+    database_url: str = "" # for local ==> empty (sqlite) , for prod =>  on render dashboard ==> postgre (supabase) url 
+    sqlite_db_path: str = "./data/neurograph.db"   
     checkpoint_db_path: str = "./data/checkpoints.db"
 
     model_config = SettingsConfigDict(
