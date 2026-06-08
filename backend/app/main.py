@@ -10,9 +10,9 @@ from app.core.logging import setup_logging, get_logger
 from app.core.exceptions import (
     NeuroGraphException,
     neurograph_exception_handler,
-    generic_exception_handler,
-)
-from app.api.routes import chat, threads, memory
+    generic_exception_handler,)
+
+from app.api.routes import chat, threads, memory, health
 from app.db.base import engine, Base
 from app.db import models  # noqa: F401
 from app.memory.checkpointer import init_checkpointer, get_db_path
@@ -41,7 +41,6 @@ async def lifespan(app: FastAPI):
     logger.info("Tavily API key set.")
 
     # Data directories
-    # checkpoint db always needed locally for SQLite STM
     if not settings.database_url:
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -95,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])
     app.include_router(memory.router, prefix="/memory", tags=["Memory"])
+    app.include_router(health.router)  
 
     return app
 

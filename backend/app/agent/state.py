@@ -12,8 +12,3 @@ class AgentState(TypedDict):
     # LTM profile injected at start of each conversation
     # as a formatted string into system prompt
     ltm_context: str
-
-    # Tool call info for streaming to frontend
-    last_tool_name: str
-    last_tool_input: dict
-    last_tool_output: str

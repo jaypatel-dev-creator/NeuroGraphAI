@@ -10,6 +10,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.api.deps import get_db
+from app.db.base import AsyncSessionLocal
 from app.db.models import Thread
 from app.memory.ltm_store import get_profile
 from app.agent.nodes.memory_writer import memory_writer_node
@@ -73,6 +74,39 @@ def get_checkpointer_context(db_path: str):
         return AsyncSqliteSaver.from_conn_string(db_path)
 
 
+def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
+    """
+    Returns (tool_output_text, sources_list).
+    Sources only populated for Tavily web search.
+    """
+    sources = []
+
+    if "tavily" in tool_name.lower():
+        try:
+            if isinstance(raw_output, list):
+                sources = [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                    }
+                    for r in raw_output
+                    if isinstance(r, dict) and r.get("url")
+                ]
+                tool_output = " ".join(
+                    r.get("content", "")
+                    for r in raw_output
+                    if isinstance(r, dict)
+                )
+            else:
+                tool_output = str(raw_output)
+        except Exception:
+            tool_output = str(raw_output)
+    else:
+        tool_output = str(raw_output)
+
+    return tool_output, sources
+
+
 async def stream_agent_response(
     thread_id: str,
     message: str,
@@ -86,9 +120,6 @@ async def stream_agent_response(
         input_state = {
             "messages": [HumanMessage(content=message)],
             "ltm_context": ltm_context,
-            "last_tool_name": "",
-            "last_tool_input": {},
-            "last_tool_output": "",
         }
 
         async with get_checkpointer_context(db_path) as checkpointer:
@@ -123,16 +154,26 @@ async def stream_agent_response(
 
                 elif event_name == "on_tool_end":
                     tool_name = event.get("name", "")
-                    tool_output = str(event_data.get("output", ""))
+                    raw_output = event_data.get("output", "")
+                    tool_output, sources = parse_tool_output(tool_name, raw_output)
                     yield format_sse({
                         "type": "tool_end",
                         "tool_name": tool_name,
                         "tool_output": tool_output,
+                        "sources": sources,
                     })
 
+            # Fresh session for memory writer
+            # original db session may be closed by StreamingResponse lifecycle
             state = await graph_with_memory.aget_state(config)
             if state and state.values.get("messages"):
-                await memory_writer_node(state.values, db)
+                async with AsyncSessionLocal() as fresh_db:
+                    try:
+                        await memory_writer_node(state.values, fresh_db)
+                        await fresh_db.commit()
+                    except Exception as e:
+                        await fresh_db.rollback()
+                        logger.error(f"Memory writer failed: {str(e)}")
 
         yield format_sse({"type": "done"})
 

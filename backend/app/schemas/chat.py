@@ -7,10 +7,16 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class Source(BaseModel):
+    title: str
+    url: str
+
+
 class ToolCall(BaseModel):
     tool_name: str
     tool_input: dict
     tool_output: str
+    sources: list[Source] = []
 
 
 class ChatMessage(BaseModel):
