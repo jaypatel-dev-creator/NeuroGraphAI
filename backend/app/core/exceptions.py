@@ -1,8 +1,14 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-#creating custom exception classes 
-class NeuroGraphException(Exception):# base exception class
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+# --- Custom Exception Classes ---
+
+class NeuroGraphException(Exception):
     def __init__(self, message: str, status_code: int = 500):
         self.message = message
         self.status_code = status_code
@@ -31,6 +37,17 @@ async def neurograph_exception_handler(
     request: Request,
     exc: NeuroGraphException,
 ) -> JSONResponse:
+    if exc.status_code >= 500:
+        # 5xx — unexpected, log as error
+        logger.error(
+            f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}",
+            exc_info=True,
+        )
+    else:
+        # 4xx — normal flow (404 not found etc.), log as warning
+        logger.warning(
+            f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}"
+        )
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -40,11 +57,15 @@ async def neurograph_exception_handler(
     )
 
 
-
 async def generic_exception_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
+    # unexpected exception — always log with full traceback
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}: {str(exc)}",
+        exc_info=True,
+    )
     return JSONResponse(
         status_code=500,
         content={

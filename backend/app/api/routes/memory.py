@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+
 from app.memory.ltm_store import (
     get_profile,
     upsert_profile_entry,
     delete_profile,
     delete_profile_entry,
+    update_profile_entry,  
 )
 from app.schemas.memory import ProfileRead, ProfileEntry, ProfileUpsert, ProfileEntryUpdate
 from app.core.logging import get_logger
@@ -32,14 +34,15 @@ async def upsert_profile(
     entry = await upsert_profile_entry(db, payload.key, payload.value)
     return ProfileEntry.model_validate(entry)
 
-
 @router.patch("/profile/{key}", response_model=ProfileEntry)
-async def update_profile_entry(
+async def update_profile_entry_route(
     key: str,
     payload: ProfileEntryUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    entry = await upsert_profile_entry(db, key, payload.value)
+    entry = await update_profile_entry(db, key, payload.value)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"Profile entry '{key}' not found.")
     return ProfileEntry.model_validate(entry)
 
 
@@ -50,7 +53,10 @@ async def delete_single_profile_entry(
 ):
     deleted = await delete_profile_entry(db, key)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Profile entry '{key}' not found.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Profile entry '{key}' not found."
+        )
 
 
 @router.delete("/profile", status_code=204)

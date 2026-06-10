@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     # DB — empty 
     database_url: str = "" # for local ==> empty (sqlite) , for prod =>  on render dashboard ==> postgre (supabase) url 
-    sqlite_db_path: str = "./data/neurograph.db"   
-    checkpoint_db_path: str = "./data/checkpoints.db"
+    sqlite_db_path: str = "./data/neurograph.db"   # for local  ==> stores  threads and user profile table 
+    checkpoint_db_path: str = "./data/checkpoints.db" # for local  ==> stores STM checkpoints 
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     )
 
 
+#returning cached version of Settings() class to prevent re-reading from .env again and again 
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()

@@ -2,17 +2,17 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from app.db.models import UserProfile
+from app.db.models import UserProfile 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-
+#get all enteries  (key +values )
 async def get_profile(db: AsyncSession) -> list[UserProfile]:
     result = await db.execute(select(UserProfile).order_by(UserProfile.key))
     return list(result.scalars().all())
 
-
+#upsert 
 async def upsert_profile_entry(
     db: AsyncSession,
     key: str,
@@ -36,13 +36,13 @@ async def upsert_profile_entry(
     logger.info(f"LTM upsert — key: {key}")
     return entry
 
-
+#delete all enteries 
 async def delete_profile(db: AsyncSession) -> None:
     await db.execute(delete(UserProfile))
     await db.flush()
     logger.info("LTM profile cleared.")
 
-
+#delete specific entry 
 async def delete_profile_entry(db: AsyncSession, key: str) -> bool:
     result = await db.execute(
         select(UserProfile).where(UserProfile.key == key)
@@ -56,3 +56,15 @@ async def delete_profile_entry(db: AsyncSession, key: str) -> bool:
     await db.flush()
     logger.info(f"LTM entry deleted — key: {key}")
     return True
+
+#update specific entry 
+async def update_profile_entry(db: AsyncSession, key: str, value: str) -> UserProfile | None:
+    result = await db.execute(select(UserProfile).where(UserProfile.key == key))
+    entry = result.scalar_one_or_none()
+
+    if not entry:
+        return None
+
+    entry.value = value  # directly update the ORM object attribute
+    await db.flush()
+    return entry
