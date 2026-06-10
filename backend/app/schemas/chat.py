@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 
-
+#request schema for Post/chat/stream
 class ChatRequest(BaseModel):
     thread_id: str
     message: str

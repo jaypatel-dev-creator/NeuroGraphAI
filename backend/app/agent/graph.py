@@ -16,7 +16,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _builder: StateGraph | None = None
-_db_path: str = ""
 
 
 def get_tools() -> list:
@@ -40,10 +39,9 @@ def should_use_tool(state: AgentState) -> str:
     return "end"
 
 
-def compile_graph(db_path: str) -> None:
-    global _builder, _db_path
+def compile_graph() -> None:
+    global _builder
 
-    _db_path = db_path
     tools = get_tools()
     tools_by_name = get_tools_by_name(tools)
 
@@ -70,7 +68,6 @@ def compile_graph(db_path: str) -> None:
     )
     builder.add_edge("tool_executor", "reasoner")
 
-    # Store builder — compile with checkpointer per request
     _builder = builder
     logger.info("LangGraph ReAct graph builder ready.")
 
@@ -79,7 +76,3 @@ def get_graph_with_checkpointer(checkpointer):
     if _builder is None:
         raise RuntimeError("Graph builder not initialized.")
     return _builder.compile(checkpointer=checkpointer)
-
-
-def get_db_path() -> str:
-    return _db_path

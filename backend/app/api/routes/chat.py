@@ -14,8 +14,8 @@ from app.db.base import AsyncSessionLocal
 from app.db.models import Thread
 from app.memory.ltm_store import get_profile
 from app.agent.nodes.memory_writer import memory_writer_node
-from app.agent.graph import get_graph_with_checkpointer, get_db_path
-from app.memory.checkpointer import use_postgres_checkpointer
+from app.agent.graph import get_graph_with_checkpointer
+from app.memory.checkpointer import get_db_path, use_postgres_checkpointer
 from app.schemas.chat import ChatRequest, ChatMessage, ChatHistoryRead
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -178,9 +178,8 @@ async def stream_agent_response(
         yield format_sse({"type": "done"})
 
     except Exception as e:
-        logger.error(f"Stream error: {str(e)}", exc_info=True)
-        yield format_sse({"type": "error", "message": str(e)})
-
+         logger.error(f"Stream error: {str(e)}", exc_info=True)
+         yield format_sse({"type": "error", "message": "Something went wrong. Please try again."})
 
 @router.post("/stream")
 async def stream_chat(

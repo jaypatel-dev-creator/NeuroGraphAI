@@ -15,7 +15,7 @@ from app.core.exceptions import (
 from app.api.routes import chat, threads, memory, health
 from app.db.base import engine, Base
 from app.db import models  # noqa: F401
-from app.memory.checkpointer import init_checkpointer, get_db_path
+
 from app.agent.graph import compile_graph
 
 logger = get_logger(__name__)
@@ -54,11 +54,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables verified.")
 
-    # STM checkpointer
-    await init_checkpointer()
-
     # Agent graph compilation
-    compile_graph(get_db_path())
+    compile_graph()
 
     logger.info("NeuroGraph AI is ready.")
     yield
@@ -94,7 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])
     app.include_router(memory.router, prefix="/memory", tags=["Memory"])
-    app.include_router(health.router)  
+    app.include_router(health.router)
 
     return app
 
