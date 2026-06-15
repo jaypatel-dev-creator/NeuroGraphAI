@@ -1,14 +1,14 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage
+from langchain_core.tools import BaseTool
 
 from app.agent.state import AgentState
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def get_llm(tools: list) -> ChatGoogleGenerativeAI:
+#used in graph.py in compile_graph() function to bind llm with tools 
+def build_llm_with_tools(tools: list[BaseTool]) -> ChatGoogleGenerativeAI:
     settings = get_settings()
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
@@ -17,19 +17,19 @@ def get_llm(tools: list) -> ChatGoogleGenerativeAI:
     )
     return llm.bind_tools(tools)
 
+# Called every turn inside reasoner_node — builds fresh system prompt with updated LTM 
+def build_system_prompt(tools: list[BaseTool], ltm_context: str) -> str:
+    tool_descriptions = "\n".join(
+        f"- {t.name}: {t.description}" for t in tools
+    )
 
-def build_system_prompt(ltm_context: str) -> str:
-    base = """You are NeuroGraph AI — a smart, helpful, and conversational assistant with memory and tools.
+    base = f"""You are NeuroGraph AI — a smart, helpful, and conversational assistant with memory and tools.
 
 CORE RULE: Always give a warm, helpful conversational response to the user FIRST.
 Never respond with only a MEMORY_UPDATE line. Always say something meaningful to the user.
 
 You have access to the following tools:
-- calculator: evaluate math expressions
-- tavily_search: search the web for current information
-- weather: get current weather for any city
-- finance: get stock prices and financial info
-- get_datetime: get the current date and time
+{tool_descriptions}
 
 Tool usage rules:
 - Use tools when the user asks for real-time or factual data
@@ -57,20 +57,21 @@ User: "Hi, my name is Jay"
 You: "MEMORY_UPDATE: key=name value=Jay" ← NEVER do this
 """
 
-    if ltm_context:
+    if ltm_context: #if ltm context exists, then append it to base string 
         base += f"\n\nWhat you already know about the user:\n{ltm_context}"
         base += "\n\nUse this context naturally in conversation without explicitly saying 'I remember that...'"
 
     return base
 
-
-async def reasoner_node(state: AgentState, tools: list) -> dict:
+async def reasoner_node(
+    state: AgentState,
+    llm_with_tools: ChatGoogleGenerativeAI,
+    tools: list[BaseTool],
+) -> dict:
     logger.debug("Reasoner node executing")
 
-    llm_with_tools = get_llm(tools)
-    system_prompt = build_system_prompt(state.get("ltm_context", ""))
-
-    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    system_prompt = build_system_prompt(tools, state.get("ltm_context", "")) 
+    messages = [SystemMessage(content=system_prompt)] + state["messages"] #final message to be sent to llm ==> SystemMessage, plus appending messages from state that will contain entire usermessage,aimessage,tool message ==> history 
 
     response = await llm_with_tools.ainvoke(messages)
 

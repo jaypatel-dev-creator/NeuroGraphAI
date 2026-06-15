@@ -1,4 +1,5 @@
 from langchain_core.tools import tool
+from simpleeval import simple_eval
 
 
 @tool
@@ -9,9 +10,7 @@ def calculator(expression: str) -> str:
     Example: '2 + 2', '(10 * 5) / 2', '2 ** 8'
     """
     try:
-        # safe eval — only math operations
-        allowed = {"__builtins__": {}}
-        result = eval(expression, allowed)  # noqa: S307
+        result = simple_eval(expression)
         return str(result)
     except Exception as e:
         return f"Calculation error: {str(e)}"
