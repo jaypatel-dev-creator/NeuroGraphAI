@@ -76,17 +76,20 @@ backend/
 │   ├── core/
 │   │   ├── config.py                # Pydantic Settings
 │   │   ├── exceptions.py            # Custom exception hierarchy
-│   │   └── logging.py              # Structured logging
+│   │   └── logging.py               # Structured logging
 │   ├── db/
 │   │   ├── base.py                  # SQLAlchemy engine + session factory
 │   │   └── models.py                # Thread + UserProfile ORM models
 │   ├── memory/
 │   │   ├── checkpointer.py          # STM checkpointer config
-│   │   └── ltm_store.py             # LTM CRUD operations
+│   │   └── ltm_store.py             # LTM CRUD operations (repository layer)
 │   ├── schemas/
 │   │   ├── chat.py
 │   │   ├── thread.py
 │   │   └── memory.py
+│   ├── services/
+│   │   ├── chat_service.py          # Chat business logic — streaming, SSE, LangGraph orchestration
+│   │   └── thread_service.py        # Thread CRUD service layer
 │   └── main.py                      # App factory + lifespan
 ├── data/                            # SQLite files (local dev, gitignored)
 ├── .env                             # Local secrets (gitignored)
@@ -107,10 +110,12 @@ Implemented via LangGraph's checkpointing system. Each conversation thread maint
 
 ### Long-Term Memory (LTM)
 
-Implemented as a key-value profile store backed by SQLAlchemy. The agent extracts persistent user facts (name, location, profession, preferences) during conversation and writes them via a `memory_writer` node. On each new request, the stored profile is injected into the system prompt so the agent retains context across sessions and threads.
+Implemented as a key-value profile store backed by SQLAlchemy. The agent extracts persistent user facts (name, location, profession, preferences) during conversation and writes them via a `memory_writer` node that runs post-graph with a fresh database session. On each new request, the stored profile is injected into the system prompt so the agent retains context across sessions and threads.
 
 - **Local dev:** SQLite → `data/neurograph.db`
 - **Production:** Supabase Postgres
+
+The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval (embedding the user query and retrieving only the top-k relevant profile entries) would be the recommended approach to avoid unnecessary context window usage.
 
 ---
 
@@ -135,17 +140,35 @@ reasoner          ← Gemini 2.5 Flash, decides next action
 **Why manual graph construction:**
 The prebuilt `create_react_agent` does not support custom post-graph hooks like the LTM memory writer, which requires a database session injected at request time rather than graph compile time.
 
+**Recursion limit:** The graph is configured with `recursion_limit=10`, allowing a maximum of 5 tool call cycles per response. This prevents runaway ReAct loops and unexpected API cost spikes.
+
 ---
 
 ## Tools
 
-| Tool | Description |
-|---|---|
-| `calculator` | Evaluates mathematical expressions |
-| `tavily_search` | Web search via Tavily API — returns sources with title + URL |
-| `weather` | Current weather for any city via wttr.in |
-| `finance` | Stock price and info via yFinance |
-| `get_datetime` | Current UTC date and time |
+| Tool | Type | Description |
+|---|---|---|
+| `calculator` | Custom | Evaluates mathematical expressions via `simpleeval` |
+| `tavily_search` | Built-in | Web search via Tavily API — returns sources with title + URL |
+| `weather` | Custom | Current weather for any city via wttr.in (async) |
+| `finance` | Custom | Stock price and info via yFinance |
+| `get_datetime` | Custom | Current UTC date and time |
+
+All tools follow the same error contract — exceptions are caught internally and returned as error strings to the LLM, which generates a user-facing message. This ensures tool failures never crash the agent.
+
+Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), this runs the coroutine directly. For sync tools (`calculator`, `finance`, `datetime`), LangChain internally dispatches to a thread pool executor via `run_in_executor`, keeping the async event loop non-blocking.
+
+---
+
+## Service Layer
+
+Routes are kept thin — request validation, existence checks, and response serialization only. All business logic lives in the service layer.
+
+| Service | Location | Responsibility |
+|---|---|---|
+| Chat service | `services/chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, title generation |
+| Thread service | `services/thread_service.py` | Thread CRUD operations |
+| LTM repository | `memory/ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
 
 ---
 
@@ -167,6 +190,8 @@ The prebuilt `create_react_agent` does not support custom post-graph hooks like 
 {"type": "done"}
 {"type": "error", "message": "..."}
 ```
+
+`MEMORY_UPDATE` lines written by the agent are stripped from chat history responses before returning to the client. During live streaming, the frontend is responsible for filtering these lines from display.
 
 ### Threads
 
@@ -284,5 +309,9 @@ Traces are visible at `https://smith.langchain.com` under your configured projec
 | Input validation | Pydantic schema only | Message length limits |
 | Tests | None | `pytest` + `httpx.AsyncClient` |
 | Structured logging | Plain text | JSON logs via `python-json-logger` |
-| Calculator security | `eval()` with restricted builtins | `numexpr` or `mathjs` |
+| Calculator security | `simpleeval` — safe math evaluation | Already implemented — replaced unsafe `eval()` |
 | Pagination | All results returned | Limit/offset on `/threads` and `/memory/profile` |
+| LTM retrieval | Full profile injected on every request | Semantic retrieval — embed query and retrieve top-k relevant profile entries only |
+| Context management | Full message history sent to LLM | Trimming, summarization, or sliding window for very long conversations |
+| CPU-bound tools | Default `ThreadPoolExecutor` | `ProcessPoolExecutor` to bypass GIL for CPU-intensive tool operations |
+| Thread deletion | Thread record deleted, checkpointer records remain | Cascade delete STM checkpoint data on thread deletion |
