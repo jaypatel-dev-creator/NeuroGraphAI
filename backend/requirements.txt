@@ -35,3 +35,6 @@ beautifulsoup4
 # Utilities
 python-jose
 tenacity
+
+#calculator.py tool
+simpleeval

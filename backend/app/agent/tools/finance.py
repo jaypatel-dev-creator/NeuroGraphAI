@@ -10,13 +10,13 @@ def finance(ticker: str) -> str:
     Example: 'AAPL', 'GOOGL', 'TSLA', 'RELIANCE.NS'
     """
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker) #convert ticker to stock object so that we can use .info
         info = stock.info
 
-        price = info.get("currentPrice") or info.get("regularMarketPrice", "N/A")
-        name = info.get("longName", ticker)
-        currency = info.get("currency", "USD")
-        change = info.get("regularMarketChangePercent", 0)
+        price = info.get("currentPrice") or info.get("regularMarketPrice", "N/A") #either get current stock price or regular stock price if fallback to NA if both not available 
+        name = info.get("longName", ticker) #full name of company default to ticker passed as parameter 
+        currency = info.get("currency", "USD") #currency of stock default to USA 
+        change = info.get("regularMarketChangePercent", 0) #
         direction = "▲" if change >= 0 else "▼"
 
         return (

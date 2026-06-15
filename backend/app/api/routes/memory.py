@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-
+#get all enteries 
 @router.get("/profile", response_model=ProfileRead)
 async def read_profile(db: AsyncSession = Depends(get_db)):
     entries = await get_profile(db)
@@ -25,15 +25,15 @@ async def read_profile(db: AsyncSession = Depends(get_db)):
         entries=[ProfileEntry.model_validate(e) for e in entries]
     )
 
-
+#upsert 
 @router.put("/profile", response_model=ProfileEntry)
 async def upsert_profile(
-    payload: ProfileUpsert,
+    payload: ProfileUpsert,#request schema 
     db: AsyncSession = Depends(get_db),
 ):
     entry = await upsert_profile_entry(db, payload.key, payload.value)
     return ProfileEntry.model_validate(entry)
-
+#update enteries by key 
 @router.patch("/profile/{key}", response_model=ProfileEntry)
 async def update_profile_entry_route(
     key: str,
@@ -45,7 +45,7 @@ async def update_profile_entry_route(
         raise HTTPException(status_code=404, detail=f"Profile entry '{key}' not found.")
     return ProfileEntry.model_validate(entry)
 
-
+#delete specific entery by key 
 @router.delete("/profile/{key}", status_code=204)
 async def delete_single_profile_entry(
     key: str,
@@ -58,7 +58,8 @@ async def delete_single_profile_entry(
             detail=f"Profile entry '{key}' not found."
         )
 
-
+#delete all enteries 
 @router.delete("/profile", status_code=204)
 async def clear_profile(db: AsyncSession = Depends(get_db)):
     await delete_profile(db)
+    
