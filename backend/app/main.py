@@ -21,10 +21,10 @@ from app.agent.graph import compile_graph
 logger = get_logger(__name__)
 
 
-@asynccontextmanager
+@asynccontextmanager #creates lifespan function to asynchronous context manager 
 async def lifespan(app: FastAPI):
     # --- Startup ---
-    settings = get_settings()
+    settings = get_settings() 
 
     setup_logging(settings.app_env)
     logger.info("Starting NeuroGraph AI...")
@@ -85,9 +85,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+#binding exception handlers 
     app.add_exception_handler(NeuroGraphException, neurograph_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-
+#binding routers 
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])
     app.include_router(memory.router, prefix="/memory", tags=["Memory"])

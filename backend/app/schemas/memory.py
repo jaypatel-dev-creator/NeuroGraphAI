@@ -7,7 +7,7 @@ class ProfileEntry(BaseModel):
     value: str
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True} #since here model_config,, so in routes using this as response schema, they should have model_validate 
 
 #response schema  for get all enteries 
 class ProfileRead(BaseModel):

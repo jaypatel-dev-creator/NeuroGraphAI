@@ -25,6 +25,7 @@ async def read_profile(db: AsyncSession = Depends(get_db)):
         entries=[ProfileEntry.model_validate(e) for e in entries]
     )
 
+
 #upsert 
 @router.put("/profile", response_model=ProfileEntry)
 async def upsert_profile(

@@ -9,10 +9,11 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+#post thread route 
 async def create_thread(db: AsyncSession, title: str) -> Thread:
     """Create a new thread with a UUID and return it."""
-    thread_id = str(uuid.uuid4())
-    thread = Thread(
+    thread_id = str(uuid.uuid4()) #generate a randome uuid manually 
+    thread = Thread( #create a thread ORM object 
         id=thread_id,
         title=title,
         is_titled=False,
@@ -23,7 +24,7 @@ async def create_thread(db: AsyncSession, title: str) -> Thread:
     logger.info(f"Thread created: {thread_id}")
     return thread
 
-
+#get all threads route 
 async def list_threads(db: AsyncSession) -> list[Thread]:
     """Return all threads ordered by most recently updated."""
     result = await db.execute(
@@ -32,6 +33,7 @@ async def list_threads(db: AsyncSession) -> list[Thread]:
     return list(result.scalars().all())
 
 
+#get thread by id route 
 async def get_thread_by_id(db: AsyncSession, thread_id: str) -> Thread | None:
     """Return a thread by ID or None if not found."""
     result = await db.execute(
@@ -39,7 +41,7 @@ async def get_thread_by_id(db: AsyncSession, thread_id: str) -> Thread | None:
     )
     return result.scalar_one_or_none()
 
-
+#patch thread route 
 async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
     """Rename a thread and mark it as titled."""
     thread.title = title
@@ -49,7 +51,7 @@ async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
     logger.info(f"Thread renamed: {thread.id} → {title}")
     return thread
 
-
+#delete thread route 
 async def delete_thread(db: AsyncSession, thread_id: str) -> None:
     """Delete a thread by ID."""
     await db.execute(delete(Thread).where(Thread.id == thread_id))

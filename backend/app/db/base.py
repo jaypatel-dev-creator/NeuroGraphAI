@@ -6,7 +6,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 
-class Base(DeclarativeBase):#base class from which all models  will be inheriting 
+class Base(DeclarativeBase):#base class from which all models  will be inheriting  in models.py
     pass
 
 #creating engine based on environment 
@@ -22,10 +22,11 @@ else:
         echo=False,# dont print every sql querry in terminal
         connect_args={"check_same_thread": False}, # by def , sqlite allows only cpu thread that created the connection to use it, since faltapi uses multiple threads, so check_same_thread=False, sqllite now allows any thread 
     )
+    
 
 #creating session maker
 AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
+    bind=engine, #session implicitly becoemes specific to engine 
     class_=AsyncSession, #create sessions that supports async await (cause entire FASTAPI is async)
     expire_on_commit=False,
 )

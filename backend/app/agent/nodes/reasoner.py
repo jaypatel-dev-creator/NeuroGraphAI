@@ -71,10 +71,10 @@ async def reasoner_node(
     logger.debug("Reasoner node executing")
 
     system_prompt = build_system_prompt(tools, state.get("ltm_context", "")) 
-    messages = [SystemMessage(content=system_prompt)] + state["messages"] #final message to be sent to llm ==> SystemMessage, plus appending messages from state that will contain entire usermessage,aimessage,tool message ==> history 
+    messages = [SystemMessage(content=system_prompt)] + state["messages"] #final message to be sent to llm ==> SystemMessage , plus appending messages from state that will contain entire usermessage,aimessage,tool message ==> history 
 
     response = await llm_with_tools.ainvoke(messages)
 
     logger.debug(f"Reasoner response: {response.content[:100] if response.content else 'tool_call'}")
 
-    return {"messages": [response]}
+    return {"messages": [response]} #auto append to state 

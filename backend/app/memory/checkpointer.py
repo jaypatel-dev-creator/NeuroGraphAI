@@ -4,7 +4,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# local==> save checkpoints in sqlite 
+# local==> returns checkpoint saving db path, in prod returns empty string cause postgre does not need and file location 
 def get_db_path() -> str:
     settings = get_settings()
     return settings.checkpoint_db_path if not settings.database_url else ""
