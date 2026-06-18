@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.api.deps import get_db
-from app.db.models import Thread
 from app.memory.checkpointer import get_db_path
 from app.schemas.chat import ChatRequest, ChatHistoryRead
 from app.core.logging import get_logger
@@ -15,21 +13,15 @@ from app.services.chat_service import (
     build_chat_history,
 )
 from app.agent.graph import get_graph_with_checkpointer
+from app.services.thread_service import get_thread_by_id
 
 logger = get_logger(__name__)
 router = APIRouter()
 
 
 @router.post("/stream")
-async def stream_chat(
-    request: ChatRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Thread).where(Thread.id == request.thread_id)
-    )
-    thread = result.scalar_one_or_none()
-
+async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+    thread = await get_thread_by_id(db, request.thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found.")
 
@@ -50,15 +42,8 @@ async def stream_chat(
 
 
 @router.get("/history/{thread_id}", response_model=ChatHistoryRead)
-async def get_chat_history(
-    thread_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(Thread).where(Thread.id == thread_id)  # ← fixed
-    )
-    thread = result.scalar_one_or_none()
-
+async def get_chat_history(thread_id: str, db: AsyncSession = Depends(get_db)):
+    thread = await get_thread_by_id(db, thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found.")
 

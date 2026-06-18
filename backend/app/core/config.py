@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     # DB — empty 
     database_url: str = "" # for local ==> empty (sqlite) , for prod =>  on render dashboard ==> postgre (supabase) url 
-    sqlite_db_path: str = "./data/neurograph.db"   # for local  ==> stores  threads and user profile table 
-    checkpoint_db_path: str = "./data/checkpoints.db" # for local  ==> stores STM checkpoints 
+    sqlite_db_path: str = "./data/neurograph.db"   # for local ==> path for neurograph.db  ==> stores  threads and user profile table 
+    checkpoint_db_path: str = "./data/checkpoints.db" # for local  path or checkpoints.db ==> stores STM checkpoints 
 
     model_config = SettingsConfigDict(
         env_file=".env",

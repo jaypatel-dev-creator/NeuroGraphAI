@@ -19,7 +19,7 @@ async def memory_writer_node(state: AgentState, db: AsyncSession) -> dict:
     last_message = state["messages"][-1] #extracting latest message from state which will be AIMessage cause this node will be called after llm generates response 
 
     # Gemini can return content as list or string
-    raw_content = last_message.content #extracting content that actually contains response of llm and so any memory uupdate line 
+    raw_content = last_message.content #extracting content from AImessage  that contains response of llm and so any memory uupdate line 
     if isinstance(raw_content, list):
         content = " ".join(
             part.get("text", "") if isinstance(part, dict) else str(part)
@@ -28,21 +28,21 @@ async def memory_writer_node(state: AgentState, db: AsyncSession) -> dict:
     else:
         content = raw_content or ""
 
-    if not content or MEMORY_UPDATE_PREFIX not in content: #if llm does not even generated anything or MEMORY_UPDATE line is not present then skip preprocessing entirely 
+    if not content or MEMORY_UPDATE_PREFIX not in content: #if llm does not even generated anything or MEMORY_UPDATE sentinel  is not present then skip preprocessing entirely 
         return {} #direct return empty dict and exit 
 
-    try: 
+    try:  #split content into lines and then check each lines if no MEMORY_UPDATE sentinel is present, then skip that line 
         lines = content.split("\n")
         for line in lines:
             line = line.strip()
             if not line.startswith(MEMORY_UPDATE_PREFIX):
                 continue
 
-          
+          #checking whether correct pattern of key and values are present in MEMORY UPDATE sentinel containing lines 
             match = MEMORY_UPDATE_PATTERN.match(line)
             if not match:
                 logger.warning(f"Skipping malformed MEMORY_UPDATE line: {line!r}")
-                continue
+                continue #skipping incorrect format lines 
 
             key = match.group(1).strip()
             value = match.group(2).strip()

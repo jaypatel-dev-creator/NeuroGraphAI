@@ -40,4 +40,5 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
             )
         )
 
-    return {"messages": results}
+    return {"messages": results} #append results to state 
+ 

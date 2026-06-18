@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 # LLM client for title generation — created once at module load
-# same pattern as reasoner.py — stateless client, no reason to recreate per request
+
 def _build_title_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
     return ChatGoogleGenerativeAI(
@@ -57,15 +57,38 @@ def get_checkpointer_context(db_path: str):
 
 
 def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
-    """
-    Returns (tool_output_text, sources_list).
-    Sources only populated for Tavily web search.
-    """
     sources = []
 
-    if "tavily" in tool_name.lower():
+    # detect Tavily by tool name OR by output structure
+    # tool_name can be empty/None in some LangGraph event versions
+    is_tavily = (
+        "tavily" in tool_name.lower()
+        or (
+            isinstance(raw_output, dict)
+            and "results" in raw_output
+            and "query" in raw_output
+        )
+    )
+
+    if is_tavily:
         try:
-            if isinstance(raw_output, list):
+            # raw_output can be a dict (Tavily response) or list
+            if isinstance(raw_output, dict) and "results" in raw_output:
+                results = raw_output.get("results", [])
+                sources = [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                    }
+                    for r in results
+                    if isinstance(r, dict) and r.get("url")
+                ]
+                tool_output = " ".join(
+                    r.get("content", "")
+                    for r in results
+                    if isinstance(r, dict)
+                )
+            elif isinstance(raw_output, list):
                 sources = [
                     {
                         "title": r.get("title", ""),
@@ -113,6 +136,7 @@ async def generate_title(message: str) -> str:
         return "New Chat"
 
 
+#streaming function ==> yields chunks one by one . 
 async def stream_agent_response(
     thread_id: str,
     message: str,
@@ -123,8 +147,8 @@ async def stream_agent_response(
     Handles text streaming, tool start/end events, memory writing, and errors.
     """
     try:
-        db_path = get_db_path()
-        ltm_context = await build_ltm_context(db)
+        db_path = get_db_path()#for local, returns  checkpoint_db_path: str = "./data/checkpoints.db", while for prod , returns empty string 
+        ltm_context = await build_ltm_context(db) #get all enteries 
 
         config = {
             "configurable": {"thread_id": thread_id},
@@ -135,8 +159,9 @@ async def stream_agent_response(
             "ltm_context": ltm_context,
         }
 
+
         async with get_checkpointer_context(db_path) as checkpointer:
-            graph_with_memory = get_graph_with_checkpointer(checkpointer)
+            graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer 
 
             async for event in graph_with_memory.astream_events(
                 input_state,
@@ -175,9 +200,6 @@ async def stream_agent_response(
                         "tool_output": tool_output,
                         "sources": sources,
                     })
-
-            # Fresh session for memory writer
-            # original db session may be closed by StreamingResponse lifecycle
             state = await graph_with_memory.aget_state(config)
             if state and state.values.get("messages"):
                 async with AsyncSessionLocal() as fresh_db:
