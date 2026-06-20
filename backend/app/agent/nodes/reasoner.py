@@ -7,17 +7,20 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-#used in graph.py in compile_graph() function to bind llm with tools 
+
+
+# used in graph.py in compile_graph() function to bind llm with tools
 def build_llm_with_tools(tools: list[BaseTool]) -> ChatGoogleGenerativeAI:
     settings = get_settings()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         google_api_key=settings.google_api_key,
         temperature=0.7,
     )
     return llm.bind_tools(tools)
 
-# Called every turn inside reasoner_node — builds fresh system prompt with updated LTM 
+
+# Called every turn inside reasoner_node — builds fresh system prompt with updated LTM
 def build_system_prompt(tools: list[BaseTool], ltm_context: str) -> str:
     tool_descriptions = "\n".join(
         f"- {t.name}: {t.description}" for t in tools
@@ -32,7 +35,18 @@ You have access to the following tools:
 {tool_descriptions}
 
 Tool usage rules:
-- Use tools when the user asks for real-time or factual data
+- Use tools ONLY when the user asks for real-time, current, or factual data
+  you cannot confidently answer from your own knowledge — such as current
+  prices, weather, today's date, or recent events.
+- For general knowledge questions — definitions, explanations, concepts,
+  how things work, historical facts, science, math theory, etc. — answer
+  DIRECTLY from your own knowledge. Do NOT search the web or use any tool
+  for things you already know well. Tools are for real-time data you
+  genuinely cannot know on your own, not a substitute for reasoning.
+- ALWAYS call get_datetime FIRST whenever the question involves today's date,
+  current time, "today", "now", "latest", "current", or anything time-sensitive —
+  before searching the web or using any other tool. Never assume or guess the
+  current date from search result content.
 - If no tool is needed, respond directly and conversationally
 - After using a tool, explain the result clearly to the user
 
@@ -57,11 +71,12 @@ User: "Hi, my name is Jay"
 You: "MEMORY_UPDATE: key=name value=Jay" ← NEVER do this
 """
 
-    if ltm_context: #if ltm context exists, then append it to base string 
+    if ltm_context:
         base += f"\n\nWhat you already know about the user:\n{ltm_context}"
         base += "\n\nUse this context naturally in conversation without explicitly saying 'I remember that...'"
 
     return base
+
 
 async def reasoner_node(
     state: AgentState,
@@ -70,11 +85,11 @@ async def reasoner_node(
 ) -> dict:
     logger.debug("Reasoner node executing")
 
-    system_prompt = build_system_prompt(tools, state.get("ltm_context", "")) 
-    messages = [SystemMessage(content=system_prompt)] + state["messages"] #final message to be sent to llm ==> SystemMessage , plus appending messages from state that will contain entire usermessage,aimessage,tool message ==> history 
+    system_prompt = build_system_prompt(tools, state.get("ltm_context", ""))
+    messages = [SystemMessage(content=system_prompt)] + state["messages"]
 
     response = await llm_with_tools.ainvoke(messages)
 
     logger.debug(f"Reasoner response: {response.content[:100] if response.content else 'tool_call'}")
 
-    return {"messages": [response]} #auto append to state 
+    return {"messages": [response]}

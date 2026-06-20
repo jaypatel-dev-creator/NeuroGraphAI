@@ -3,6 +3,17 @@ import client from '../api/client'
 
 const ChatContext = createContext(null)
 
+const MEMORY_UPDATE_PREFIX = 'MEMORY_UPDATE:'
+
+function stripMemoryUpdates(text) {
+  if (!text) return text
+  return text
+    .split('\n')
+    .filter((line) => !line.trim().startsWith(MEMORY_UPDATE_PREFIX))
+    .join('\n')
+    .trim()
+}
+
 export function ChatProvider({ children }) {
   const [threads, setThreads] = useState([])
   const [activeThreadId, setActiveThreadId] = useState(null)
@@ -12,8 +23,11 @@ export function ChatProvider({ children }) {
   const [profile, setProfile] = useState([])
   const [showProfile, setShowProfile] = useState(false)
 
-  // ref to prevent duplicate done events
   const doneCommittedRef = useRef(false)
+  const showProfileRef = useRef(false)
+
+  // keep ref in sync so handleSSEEvent (stable callback) can read latest value
+  showProfileRef.current = showProfile
 
   // --- Thread actions ---
 
@@ -131,7 +145,11 @@ export function ChatProvider({ children }) {
       case 'text':
         setStreamingMessage((prev) => {
           if (!prev) return prev
-          return { ...prev, content: prev.content + event.content }
+          // strip MEMORY_UPDATE lines live as text streams in
+          return {
+            ...prev,
+            content: stripMemoryUpdates(prev.content + event.content),
+          }
         })
         break
 
@@ -172,24 +190,30 @@ export function ChatProvider({ children }) {
         break
 
       case 'done':
-        // guard against duplicate done events from StrictMode or stream quirks
         if (doneCommittedRef.current) break
         doneCommittedRef.current = true
 
         setStreamingMessage((prev) => {
           if (prev) {
+            const cleanContent = stripMemoryUpdates(prev.content)
             setMessages((msgs) => {
               const last = msgs[msgs.length - 1]
-              if (last && last.role === 'ai' && last.content === prev.content) {
+              if (last && last.role === 'ai' && last.content === cleanContent) {
                 return msgs
               }
-              return [...msgs, { ...prev, currentTool: null }]
+              return [...msgs, { ...prev, content: cleanContent, currentTool: null }]
             })
           }
           return null
         })
         setIsStreaming(false)
         refreshThreadTitle(activeThreadId)
+
+        // refresh profile automatically if panel is open —
+        // agent may have just written new LTM facts via memory_writer
+        if (showProfileRef.current) {
+          loadProfile()
+        }
         break
 
       case 'error':
