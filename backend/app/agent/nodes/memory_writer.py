@@ -15,7 +15,12 @@ MEMORY_UPDATE_PATTERN = re.compile( #regex to extract key and value
 )
 
 
-async def memory_writer_node(state: AgentState, db: AsyncSession) -> dict:
+async def memory_writer_node(state: AgentState, db: AsyncSession) -> list[str]:
+    """
+    Parses MEMORY_UPDATE lines from the last AIMessage and upserts them to LTM.
+    Returns a list of saved keys so the caller can emit a notification.
+    Returns empty list if nothing was saved.
+    """
     last_message = state["messages"][-1] #extracting latest message from state which will be AIMessage cause this node will be called after llm generates response 
 
     # Gemini can return content as list or string
@@ -29,7 +34,9 @@ async def memory_writer_node(state: AgentState, db: AsyncSession) -> dict:
         content = raw_content or ""
 
     if not content or MEMORY_UPDATE_PREFIX not in content: #if llm does not even generated anything or MEMORY_UPDATE sentinel  is not present then skip preprocessing entirely 
-        return {} #direct return empty dict and exit 
+        return [] #direct return empty list and exit 
+
+    saved_keys = []
 
     try:  #split content into lines and then check each lines if no MEMORY_UPDATE sentinel is present, then skip that line 
         lines = content.split("\n")
@@ -53,8 +60,9 @@ async def memory_writer_node(state: AgentState, db: AsyncSession) -> dict:
 
             await upsert_profile_entry(db, key, value)
             logger.info(f"LTM updated — key: {key}, value: {value}")
+            saved_keys.append(key)
 
     except Exception as e:
         logger.error(f"Memory writer failed: {str(e)}")
 
-    return {}
+    return saved_keys

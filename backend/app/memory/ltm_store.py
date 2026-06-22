@@ -85,3 +85,4 @@ async def update_profile_entry(db: AsyncSession, key: str, value: str) -> UserPr
     entry.value = value
     await db.flush()
     return entry
+

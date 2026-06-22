@@ -64,9 +64,9 @@ backend/
 │   │   ├── graph.py                 # LangGraph graph definition
 │   │   ├── state.py                 # AgentState TypedDict
 │   │   ├── nodes/
-│   │   │   ├── reasoner.py          # LLM reasoning node
+│   │   │   ├── reasoner.py          # LLM reasoning node + system prompt
 │   │   │   ├── tool_executor.py     # Tool execution node
-│   │   │   └── memory_writer.py     # LTM write node
+│   │   │   └── memory_writer.py     # LTM write node — returns saved keys
 │   │   └── tools/
 │   │       ├── calculator.py
 │   │       ├── search.py            # Tavily web search
@@ -110,10 +110,12 @@ Implemented via LangGraph's checkpointing system. Each conversation thread maint
 
 ### Long-Term Memory (LTM)
 
-Implemented as a key-value profile store backed by SQLAlchemy. The agent extracts persistent user facts (name, location, profession, preferences) during conversation and writes them via a `memory_writer` node that runs post-graph with a fresh database session. On each new request, the stored profile is injected into the system prompt so the agent retains context across sessions and threads.
+Implemented as a key-value profile store backed by SQLAlchemy. The agent extracts persistent user facts — name, location, profession, preferences, interests, and any other personal detail shared in conversation — and writes them via a `memory_writer` node that runs post-graph with a fresh database session. On each new request, the stored profile is injected into the system prompt so the agent retains context across sessions and threads.
 
 - **Local dev:** SQLite → `data/neurograph.db`
 - **Production:** Supabase Postgres
+
+The `memory_writer` node returns a list of keys that were saved on each turn. The chat service captures this return value and emits a dedicated `memory_update` SSE event to the frontend, which displays a non-intrusive `🧠 Memory updated` notification — the same pattern used by ChatGPT and Claude.
 
 The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval (embedding the user query and retrieving only the top-k relevant profile entries) would be the recommended approach to avoid unnecessary context window usage.
 
@@ -187,11 +189,20 @@ Routes are kept thin — request validation, existence checks, and response seri
 {"type": "text", "content": "..."}
 {"type": "tool_start", "tool_name": "...", "tool_input": {}}
 {"type": "tool_end", "tool_name": "...", "tool_output": "...", "sources": []}
+{"type": "memory_update", "keys": ["name", "location"]}
 {"type": "done"}
 {"type": "error", "message": "..."}
 ```
 
-`MEMORY_UPDATE` lines written by the agent are stripped from chat history responses before returning to the client. During live streaming, the frontend is responsible for filtering these lines from display.
+**`memory_update`** is emitted after the graph completes, when the `memory_writer` node saves one or more LTM facts. The frontend uses this event to display a passive `🧠 Memory updated` notification that auto-dismisses after 4 seconds.
+
+`MEMORY_UPDATE` sentinel lines written by the agent into its response are stripped from the SSE text stream before display, and are excluded entirely from chat history responses.
+
+### Chat History Behavior
+
+On history reload, the backend returns human messages and AI responses only. Tool execution metadata (badges, sources) is visible during live streaming but is intentionally not reconstructed from checkpoints on reload.
+
+LangGraph checkpoints are designed for agent state recovery — not as a structured message store. Reconstructing tool output from raw checkpoint data is unreliable across LangGraph versions. The correct production pattern is a dedicated `chat_messages` table written at stream time, which is planned as a future improvement.
 
 ### Threads
 
@@ -208,10 +219,12 @@ Routes are kept thin — request validation, existence checks, and response seri
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/memory/profile` | Read all stored profile facts |
-| PUT | `/memory/profile` | Upsert a profile entry |
-| PATCH | `/memory/profile/{key}` | Update a single entry |
+| PUT | `/memory/profile` | Upsert a profile entry (admin / external use) |
+| PATCH | `/memory/profile/{key}` | Update a single entry by key |
 | DELETE | `/memory/profile/{key}` | Delete a single entry |
 | DELETE | `/memory/profile` | Clear entire profile |
+
+The agent writes to LTM by calling `upsert_profile_entry()` from the service layer directly — it does not go through the REST API. The `PUT` and `PATCH` routes expose the same underlying operations for external tooling or future admin UI use.
 
 ### Health
 
@@ -304,6 +317,7 @@ Traces are visible at `https://smith.langchain.com` under your configured projec
 | Area | Current | Future Improvement |
 |---|---|---|
 | Authentication | None — all endpoints public | JWT-based auth via `python-jose` |
+| Tool history on reload | Tool badges and sources visible during live streaming only — not persisted across page refresh. LangGraph checkpoints are not designed as a message store; reconstructing structured tool output from raw checkpoint data is unreliable. | Dedicated `chat_messages` table written at stream time — same pattern used by ChatGPT and Perplexity |
 | STM in production | AsyncPostgresSaver (Supabase) | Already implemented |
 | Rate limiting | None | `slowapi` middleware |
 | Input validation | Pydantic schema only | Message length limits |

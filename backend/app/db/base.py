@@ -18,7 +18,7 @@ if settings.database_url: # production mode==> postgres(supabase)
     )
 else:
     engine = create_async_engine(
-        f"sqlite+aiosqlite:///{settings.sqlite_db_path}", #location of neurograph.db
+        f"sqlite+aiosqlite:///{settings.sqlite_db_path}", #location of neurograph.db 
         echo=False,# dont print every sql querry in terminal
         connect_args={"check_same_thread": False}, # by def , sqlite allows only cpu thread that created the connection to use it, since faltapi uses multiple threads, so check_same_thread=False, sqllite now allows any thread 
     )

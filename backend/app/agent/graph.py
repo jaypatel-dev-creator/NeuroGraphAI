@@ -13,6 +13,7 @@ from app.agent.tools.weather import weather
 from app.agent.tools.finance import finance
 from app.agent.tools.datetime_tool import get_datetime
 from app.core.logging import get_logger
+from app.core.exceptions import AgentException  # ← added
 
 logger = get_logger(__name__)
 
@@ -79,5 +80,5 @@ def compile_graph() -> None:
 #compile graph each request 
 def get_graph_with_checkpointer(checkpointer):
     if _builder is None: #access module level _builder and compile fresh per request 
-        raise RuntimeError("Graph builder not initialized.")
+        raise AgentException("Graph builder not initialized. Call compile_graph() on startup.")  # ← changed
     return _builder.compile(checkpointer=checkpointer)

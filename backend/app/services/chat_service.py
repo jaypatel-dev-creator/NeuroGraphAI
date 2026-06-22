@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+
 # LLM client for title generation — created once at module load
 
 def _build_title_llm() -> ChatGoogleGenerativeAI:
@@ -59,8 +60,7 @@ def get_checkpointer_context(db_path: str):
 def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
     sources = []
 
-    # detect Tavily by tool name OR by output structure
-    # tool_name can be empty/None in some LangGraph event versions
+   
     is_tavily = (
         "tavily" in tool_name.lower()
         or (
@@ -136,6 +136,7 @@ async def generate_title(message: str) -> str:
         return "New Chat"
 
 
+
 #streaming function ==> yields chunks one by one . 
 async def stream_agent_response(
     thread_id: str,
@@ -145,6 +146,7 @@ async def stream_agent_response(
     """
     Core streaming function — runs the LangGraph ReAct agent and yields SSE events.
     Handles text streaming, tool start/end events, memory writing, and errors.
+    Emits a memory_update SSE event when LTM keys are saved.
     """
     try:
         db_path = get_db_path()#for local, returns  checkpoint_db_path: str = "./data/checkpoints.db", while for prod , returns empty string 
@@ -158,7 +160,6 @@ async def stream_agent_response(
             "messages": [HumanMessage(content=message)],
             "ltm_context": ltm_context,
         }
-
 
         async with get_checkpointer_context(db_path) as checkpointer:
             graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer 
@@ -200,12 +201,19 @@ async def stream_agent_response(
                         "tool_output": tool_output,
                         "sources": sources,
                     })
+
             state = await graph_with_memory.aget_state(config)
             if state and state.values.get("messages"):
                 async with AsyncSessionLocal() as fresh_db:
                     try:
-                        await memory_writer_node(state.values, fresh_db)
+                        saved_keys = await memory_writer_node(state.values, fresh_db)
                         await fresh_db.commit()
+                        # Emit memory_update event if any keys were saved
+                        if saved_keys:
+                            yield format_sse({
+                                "type": "memory_update",
+                                "keys": saved_keys,
+                            })
                     except Exception as e:
                         await fresh_db.rollback()
                         logger.error(f"Memory writer failed: {str(e)}")
@@ -220,7 +228,11 @@ async def stream_agent_response(
 def build_chat_history(state) -> list[ChatMessage]:
     """
     Parse LangGraph state messages into ChatMessage list.
-    Strips MEMORY_UPDATE lines from AIMessage content before returning.
+    - HumanMessage and AIMessage are returned.
+    - ToolMessage is intentionally skipped — raw checkpoint data is not
+      suitable for display. Tool badges and sources are shown during live
+      streaming only. This is Pattern A, same as ChatGPT's behavior.
+    - MEMORY_UPDATE lines are stripped from AIMessage content.
     """
     messages = []
     if not state or not state.values.get("messages"):
@@ -238,7 +250,6 @@ def build_chat_history(state) -> list[ChatMessage]:
             clean_content = "\n".join(clean_lines).strip()
             if clean_content:
                 messages.append(ChatMessage(role="ai", content=clean_content))
-        elif isinstance(msg, ToolMessage):
-            messages.append(ChatMessage(role="tool", content=msg.content))
+        # ToolMessage intentionally skipped — see docstring above
 
     return messages

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,6 +6,7 @@ from app.api.deps import get_db
 from app.memory.checkpointer import get_db_path
 from app.schemas.chat import ChatRequest, ChatHistoryRead
 from app.core.logging import get_logger
+from app.core.exceptions import ThreadNotFoundException
 from app.services.chat_service import (
     stream_agent_response,
     generate_title,
@@ -23,7 +24,7 @@ router = APIRouter()
 async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     thread = await get_thread_by_id(db, request.thread_id)
     if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found.")
+        raise ThreadNotFoundException(request.thread_id)
 
     if not thread.is_titled:
         title = await generate_title(request.message)
@@ -45,7 +46,7 @@ async def stream_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 async def get_chat_history(thread_id: str, db: AsyncSession = Depends(get_db)):
     thread = await get_thread_by_id(db, thread_id)
     if not thread:
-        raise HTTPException(status_code=404, detail="Thread not found.")
+        raise ThreadNotFoundException(thread_id)
 
     db_path = get_db_path()
     config = {"configurable": {"thread_id": thread_id}}

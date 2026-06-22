@@ -5,7 +5,7 @@ import StreamingMessage from './StreamingMessage'
 import ChatInput from './ChatInput'
 
 export default function ChatWindow() {
-  const { messages, streamingMessage, activeThreadId, isStreaming } = useChat()
+  const { messages, streamingMessage, activeThreadId, isStreaming, memoryNotification } = useChat()
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -51,6 +51,20 @@ export default function ChatWindow() {
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {/* Memory update notification — fixed at bottom above input */}
+      {memoryNotification && (
+        <div className="px-4 pb-2">
+          <div className="max-w-2xl mx-auto">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 border border-purple-100 text-xs text-purple-600">
+              <span>🧠</span>
+              <span>
+                Memory updated: <span className="font-medium">{memoryNotification.keys.join(', ')}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Input area */}
       <div className="border-t border-gray-100 px-4 py-4">

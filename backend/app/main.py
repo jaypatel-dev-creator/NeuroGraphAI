@@ -41,12 +41,13 @@ async def lifespan(app: FastAPI):
     logger.info("Tavily API key set.")
 
     # Data directories
-    if not settings.database_url:
+
+    if not settings.database_url:#for local, create neurograph.db file and checkpoints.db file
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"SQLite mode — db: {settings.sqlite_db_path}")
         logger.info(f"Checkpoint db: {settings.checkpoint_db_path}")
-    else:
+    else: #for prod, no need to create db files 
         logger.info("Postgres mode — using DATABASE_URL")
 
     # DB table creation

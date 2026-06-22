@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+#pydantic settings based configuration management 
 class Settings(BaseSettings):
     # Gemini
     google_api_key: str
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     )
 
 
-#returning cached version of Settings() class to prevent re-reading from .env again and again 
+#factory functions to return cached instance  of Settings 
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()

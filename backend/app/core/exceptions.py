@@ -27,6 +27,14 @@ class ThreadNotFoundException(NeuroGraphException):
         )
 
 
+class ProfileEntryNotFoundException(NeuroGraphException):
+    def __init__(self, key: str):
+        super().__init__(
+            message=f"Profile entry '{key}' not found.",
+            status_code=404,
+        )
+
+
 class LTMException(NeuroGraphException):
     pass
 
@@ -38,13 +46,11 @@ async def neurograph_exception_handler(
     exc: NeuroGraphException,
 ) -> JSONResponse:
     if exc.status_code >= 500:
-        # 5xx — unexpected, log as error
         logger.error(
             f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}",
             exc_info=True,
         )
     else:
-        # 4xx — normal flow (404 not found etc.), log as warning
         logger.warning(
             f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}"
         )
@@ -61,7 +67,6 @@ async def generic_exception_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
-    # unexpected exception — always log with full traceback
     logger.error(
         f"Unhandled exception on {request.method} {request.url.path}: {str(exc)}",
         exc_info=True,

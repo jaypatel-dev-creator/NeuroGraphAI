@@ -19,10 +19,10 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
         logger.info(f"Executing tool: {tool_name} | input: {tool_input}")
 
         tool: BaseTool = tools_by_name.get(tool_name)
-
-        if not tool: #safety check 
+        #safety check to prevent hallucinated tool names from being executed 
+        if not tool: 
             output = f"Tool '{tool_name}' not found."
-        else:
+        else:#if no hallucinated output 
             try:
                
                 output = await tool.ainvoke(tool_input) 
