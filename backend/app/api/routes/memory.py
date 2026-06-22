@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-
+from app.core.exceptions import ProfileEntryNotFoundException
 from app.memory.ltm_store import (
     get_profile,
     upsert_profile_entry,
     delete_profile,
     delete_profile_entry,
-    update_profile_entry,  
+    update_profile_entry,
 )
 from app.schemas.memory import ProfileRead, ProfileEntry, ProfileUpsert, ProfileEntryUpdate
 from app.core.logging import get_logger
@@ -17,7 +17,8 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-#get all enteries 
+
+#get all entries
 @router.get("/profile", response_model=ProfileRead)
 async def read_profile(db: AsyncSession = Depends(get_db)):
     entries = await get_profile(db)
@@ -26,15 +27,17 @@ async def read_profile(db: AsyncSession = Depends(get_db)):
     )
 
 
-#upsert 
+#upsert
 @router.put("/profile", response_model=ProfileEntry)
 async def upsert_profile(
-    payload: ProfileUpsert,#request schema 
+    payload: ProfileUpsert,
     db: AsyncSession = Depends(get_db),
 ):
     entry = await upsert_profile_entry(db, payload.key, payload.value)
     return ProfileEntry.model_validate(entry)
-#update enteries by key 
+
+
+#update entry by key
 @router.patch("/profile/{key}", response_model=ProfileEntry)
 async def update_profile_entry_route(
     key: str,
@@ -43,10 +46,11 @@ async def update_profile_entry_route(
 ):
     entry = await update_profile_entry(db, key, payload.value)
     if not entry:
-        raise HTTPException(status_code=404, detail=f"Profile entry '{key}' not found.")
+        raise ProfileEntryNotFoundException(key)
     return ProfileEntry.model_validate(entry)
 
-#delete specific entery by key 
+
+#delete specific entry by key
 @router.delete("/profile/{key}", status_code=204)
 async def delete_single_profile_entry(
     key: str,
@@ -54,13 +58,10 @@ async def delete_single_profile_entry(
 ):
     deleted = await delete_profile_entry(db, key)
     if not deleted:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Profile entry '{key}' not found."
-        )
+        raise ProfileEntryNotFoundException(key)
 
-#delete all enteries 
+
+#delete all entries
 @router.delete("/profile", status_code=204)
 async def clear_profile(db: AsyncSession = Depends(get_db)):
     await delete_profile(db)
-    

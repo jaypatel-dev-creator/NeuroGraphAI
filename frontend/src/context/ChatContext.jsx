@@ -22,9 +22,11 @@ export function ChatProvider({ children }) {
   const [streamingMessage, setStreamingMessage] = useState(null)
   const [profile, setProfile] = useState([])
   const [showProfile, setShowProfile] = useState(false)
+  const [memoryNotification, setMemoryNotification] = useState(null) // { keys: [] }
 
   const doneCommittedRef = useRef(false)
   const showProfileRef = useRef(false)
+  const memoryTimerRef = useRef(null)
 
   // keep ref in sync so handleSSEEvent (stable callback) can read latest value
   showProfileRef.current = showProfile
@@ -105,7 +107,7 @@ export function ChatProvider({ children }) {
     })
 
     try {
-      const response = await fetch('http://localhost:8000/chat/stream', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ thread_id: activeThreadId, message }),
@@ -187,6 +189,19 @@ export function ChatProvider({ children }) {
             currentTool: null,
           }
         })
+        break
+
+      case 'memory_update':
+        // Show notification and auto-dismiss after 4 seconds
+        if (memoryTimerRef.current) clearTimeout(memoryTimerRef.current)
+        setMemoryNotification({ keys: event.keys })
+        memoryTimerRef.current = setTimeout(() => {
+          setMemoryNotification(null)
+        }, 4000)
+        // Also refresh profile panel if it's open
+        if (showProfileRef.current) {
+          loadProfile()
+        }
         break
 
       case 'done':
@@ -282,6 +297,7 @@ export function ChatProvider({ children }) {
       streamingMessage,
       profile,
       showProfile,
+      memoryNotification,
       loadThreads,
       createThread,
       selectThread,
