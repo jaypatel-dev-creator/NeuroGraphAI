@@ -6,8 +6,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-# --- Custom Exception Classes ---
-
+#Base class 
 class NeuroGraphException(Exception):
     def __init__(self, message: str, status_code: int = 500):
         self.message = message
@@ -18,7 +17,6 @@ class NeuroGraphException(Exception):
 class AgentException(NeuroGraphException):
     pass
 
-
 class ThreadNotFoundException(NeuroGraphException):
     def __init__(self, thread_id: str):
         super().__init__(
@@ -26,14 +24,12 @@ class ThreadNotFoundException(NeuroGraphException):
             status_code=404,
         )
 
-
 class ProfileEntryNotFoundException(NeuroGraphException):
     def __init__(self, key: str):
         super().__init__(
             message=f"Profile entry '{key}' not found.",
             status_code=404,
         )
-
 
 class LTMException(NeuroGraphException):
     pass
