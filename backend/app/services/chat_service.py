@@ -132,7 +132,7 @@ async def generate_title(message: str) -> str:
         response = await _title_llm.ainvoke(prompt)
         return response.content.strip()
     except Exception as e:
-        logger.error(f"Title generation failed: {str(e)}")
+        logger.warning(f"Title generation failed: {str(e)}")
         return "New Chat"
 
 
@@ -163,7 +163,7 @@ async def stream_agent_response(
 
         async with get_checkpointer_context(db_path) as checkpointer:
             graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer 
-
+           ##invoking graph with astream_events to support streaming 
             async for event in graph_with_memory.astream_events(
                 input_state,
                 config=config,
