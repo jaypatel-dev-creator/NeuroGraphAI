@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, Boolean
+from sqlalchemy import String, Text, DateTime, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,4 +30,16 @@ class UserProfile(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+# Document model — tracks uploaded files for RAG
+# sha256 is PK ==> content-based dedup (same file different name = already indexed)
+class Document(Base):
+    __tablename__ = "documents"
+
+    sha256: Mapped[str] = mapped_column(String, primary_key=True)  # content hash — dedup key
+    filename: Mapped[str] = mapped_column(String, nullable=False)   # original filename shown in UI
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False) # how many chunks were created
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
     )
