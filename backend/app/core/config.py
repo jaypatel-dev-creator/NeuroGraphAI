@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     sqlite_db_path: str = "./data/neurograph.db"   # for local ==> path for neurograph.db  ==> stores  threads and user profile table 
     checkpoint_db_path: str = "./data/checkpoints.db" # for local  path or checkpoints.db ==> stores STM checkpoints 
 
+    # RAG — vector store
+    # local ==> empty (chromadb), for prod ==> set PINECONE_API_KEY on render dashboard
+    chroma_path: str = "./data/chroma"          # local ChromaDB persistence directory
+    pinecone_api_key: str = ""                  # prod: set on render dashboard; empty = use ChromaDB
+    pinecone_index_name: str = "neurograph-rag" # prod: pre-created index name in Pinecone console
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

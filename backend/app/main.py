@@ -13,10 +13,12 @@ from app.core.exceptions import (
     generic_exception_handler,)
 
 from app.api.routes import chat, threads, memory, health
+from app.api.routes import documents
 from app.db.base import engine, Base
 from app.db import models  # noqa: F401
 
 from app.agent.graph import compile_graph
+from app.rag.store import init_store
 
 logger = get_logger(__name__)
 
@@ -41,8 +43,7 @@ async def lifespan(app: FastAPI):
     logger.info("Tavily API key set.")
 
     # Data directories
-
-    if not settings.database_url:#for local, create neurograph.db file and checkpoints.db file
+    if not settings.database_url: #for local, create neurograph.db file and checkpoints.db file
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"SQLite mode — db: {settings.sqlite_db_path}")
@@ -57,6 +58,9 @@ async def lifespan(app: FastAPI):
 
     # Agent graph compilation
     compile_graph()
+
+    # RAG vector store initialization — ChromaDB local, Pinecone prod (env-driven)
+    init_store()
 
     logger.info("NeuroGraph AI is ready.")
     yield
@@ -93,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])
     app.include_router(memory.router, prefix="/memory", tags=["Memory"])
+    app.include_router(documents.router, prefix="/documents", tags=["Documents"])
     app.include_router(health.router)
 
     return app

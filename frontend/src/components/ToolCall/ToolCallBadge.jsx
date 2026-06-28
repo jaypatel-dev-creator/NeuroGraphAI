@@ -6,6 +6,7 @@ const TOOL_ICONS = {
   finance: '📈',
   get_datetime: '🕐',
   tavily_search: '🔍',
+  document_search: '📄',
 }
 
 const TOOL_LABELS = {
@@ -14,6 +15,7 @@ const TOOL_LABELS = {
   finance: 'Finance',
   get_datetime: 'Date & Time',
   tavily_search: 'Web Search',
+  document_search: 'Document Search',
 }
 
 export default function ToolCallBadge({ toolCall }) {
@@ -25,7 +27,6 @@ export default function ToolCallBadge({ toolCall }) {
 
   return (
     <div className="inline-flex flex-col gap-1.5 max-w-lg">
-
       <button
         type="button"
         onClick={() => hasOutput && setExpanded((prev) => !prev)}
@@ -63,7 +64,6 @@ export default function ToolCallBadge({ toolCall }) {
             : toolCall.tool_output}
         </div>
       )}
-
     </div>
   )
 }

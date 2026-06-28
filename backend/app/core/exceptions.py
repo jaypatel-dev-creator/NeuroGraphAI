@@ -34,6 +34,16 @@ class ProfileEntryNotFoundException(NeuroGraphException):
 class LTMException(NeuroGraphException):
     pass
 
+class RAGException(NeuroGraphException):
+    pass
+
+class DocumentNotFoundException(NeuroGraphException):
+    def __init__(self, sha256: str):
+        super().__init__(
+            message=f"Document '{sha256}' not found.",
+            status_code=404,
+        )
+
 
 # --- Exception Handlers ---
 

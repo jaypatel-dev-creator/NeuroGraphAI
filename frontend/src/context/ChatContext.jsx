@@ -22,13 +22,17 @@ export function ChatProvider({ children }) {
   const [streamingMessage, setStreamingMessage] = useState(null)
   const [profile, setProfile] = useState([])
   const [showProfile, setShowProfile] = useState(false)
-  const [memoryNotification, setMemoryNotification] = useState(null) // { keys: [] }
+  const [memoryNotification, setMemoryNotification] = useState(null)
+
+  // --- RAG document state ---
+  const [documents, setDocuments] = useState([])           // list of uploaded docs from DB
+  const [showDocuments, setShowDocuments] = useState(false) // toggle docs panel in sidebar
+  const [uploadStatuses, setUploadStatuses] = useState([])  // per-file upload feedback
 
   const doneCommittedRef = useRef(false)
   const showProfileRef = useRef(false)
   const memoryTimerRef = useRef(null)
 
-  // keep ref in sync so handleSSEEvent (stable callback) can read latest value
   showProfileRef.current = showProfile
 
   // --- Thread actions ---
@@ -147,7 +151,6 @@ export function ChatProvider({ children }) {
       case 'text':
         setStreamingMessage((prev) => {
           if (!prev) return prev
-          // strip MEMORY_UPDATE lines live as text streams in
           return {
             ...prev,
             content: stripMemoryUpdates(prev.content + event.content),
@@ -192,13 +195,11 @@ export function ChatProvider({ children }) {
         break
 
       case 'memory_update':
-        // Show notification and auto-dismiss after 4 seconds
         if (memoryTimerRef.current) clearTimeout(memoryTimerRef.current)
         setMemoryNotification({ keys: event.keys })
         memoryTimerRef.current = setTimeout(() => {
           setMemoryNotification(null)
         }, 4000)
-        // Also refresh profile panel if it's open
         if (showProfileRef.current) {
           loadProfile()
         }
@@ -224,8 +225,6 @@ export function ChatProvider({ children }) {
         setIsStreaming(false)
         refreshThreadTitle(activeThreadId)
 
-        // refresh profile automatically if panel is open —
-        // agent may have just written new LTM facts via memory_writer
         if (showProfileRef.current) {
           loadProfile()
         }
@@ -288,6 +287,73 @@ export function ChatProvider({ children }) {
     }
   }, [])
 
+  // --- Document actions ---
+
+  const loadDocuments = useCallback(async () => {
+    try {
+      const res = await client.get('/documents/')
+      setDocuments(res.data)
+    } catch (err) {
+      console.error('Failed to load documents:', err)
+    }
+  }, [])
+
+  const uploadDocuments = useCallback(async (files) => {
+    const formData = new FormData()
+    for (const file of files) {
+      formData.append('files', file)
+    }
+
+    const initial = Array.from(files).map((f) => ({
+      filename: f.name,
+      status: 'uploading',
+      message: '',
+    }))
+    setUploadStatuses(initial)
+
+    try {
+      // Content-Type set to undefined — forces axios to drop the default
+      // application/json header and auto-set multipart/form-data with correct boundary
+      const res = await client.post('/documents/upload', formData, {
+        headers: { 'Content-Type': undefined },
+      })
+
+      const updated = res.data.map((r) => ({
+        filename: r.filename,
+        status: r.already_existed ? 'duplicate' : 'success',
+        message: r.message,
+      }))
+      setUploadStatuses(updated)
+
+      await loadDocuments()
+
+      setTimeout(() => setUploadStatuses([]), 5000)
+    } catch (err) {
+      console.error('Upload failed:', err)
+      const errored = Array.from(files).map((f) => ({
+        filename: f.name,
+        status: 'error',
+        message: `${f.name} failed to upload`,
+      }))
+      setUploadStatuses(errored)
+      setTimeout(() => setUploadStatuses([]), 5000)
+    }
+  }, [loadDocuments])
+
+  const deleteDocument = useCallback(async (sha256) => {
+    try {
+      await client.delete(`/documents/${sha256}`)
+      setDocuments((prev) => prev.filter((d) => d.sha256 !== sha256))
+    } catch (err) {
+      console.error('Failed to delete document:', err)
+    }
+  }, [])
+
+  const handleToggleDocuments = useCallback(async () => {
+    if (!showDocuments) await loadDocuments()
+    setShowDocuments((prev) => !prev)
+  }, [showDocuments, loadDocuments])
+
   return (
     <ChatContext.Provider value={{
       threads,
@@ -298,6 +364,9 @@ export function ChatProvider({ children }) {
       profile,
       showProfile,
       memoryNotification,
+      documents,
+      showDocuments,
+      uploadStatuses,
       loadThreads,
       createThread,
       selectThread,
@@ -308,6 +377,10 @@ export function ChatProvider({ children }) {
       deleteProfileEntry,
       clearProfile,
       setShowProfile,
+      loadDocuments,
+      uploadDocuments,
+      deleteDocument,
+      handleToggleDocuments,
     }}>
       {children}
     </ChatContext.Provider>
