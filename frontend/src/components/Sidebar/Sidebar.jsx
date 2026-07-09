@@ -34,9 +34,12 @@ export default function Sidebar() {
         className={`flex items-center border-b border-gray-100 ${collapsed ? "p-3 justify-center" : "p-4 justify-between"}`}
       >
         {!collapsed && (
-          <h1 className="text-base font-semibold text-gray-800 tracking-tight truncate">
-            NeuroGraph AI
-          </h1>
+          <div className="flex items-center gap-2">
+  <img src="/favicon.svg" alt="logo" className="w-5 h-5 flex-shrink-0" />
+  <h1 className="text-base font-semibold text-gray-800 tracking-tight truncate">
+    NeuroGraph AI
+  </h1>
+</div>
         )}
         <button
           onClick={() => setCollapsed((prev) => !prev)}

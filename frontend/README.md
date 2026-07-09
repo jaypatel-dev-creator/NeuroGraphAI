@@ -12,7 +12,7 @@ A React frontend for the NeuroGraph AI conversational agent. Built with Vite, Ta
 | Build Tool | Vite 8 |
 | Styling | Tailwind CSS v4 (`@tailwindcss/vite` plugin) |
 | Markdown Rendering | `react-markdown` + `@tailwindcss/typography` |
-| HTTP Client | Axios (thread/memory API calls) + native `fetch` (SSE stream) |
+| HTTP Client | Axios (thread/memory/document API calls) + native `fetch` (SSE stream) |
 | State Management | React Context + `useState` / `useCallback` / `useRef` |
 
 ---
@@ -29,20 +29,22 @@ frontend/
 │   │   └── client.js                # Axios instance (baseURL: localhost:8000)
 │   ├── components/
 │   │   ├── Chat/
-│   │   │   ├── ChatWindow.jsx       # Message list, streaming, memory notification
+│   │   │   ├── ChatWindow.jsx       # Message list, streaming, memory + upload status notifications
 │   │   │   ├── MessageBubble.jsx    # Human + AI message rendering
 │   │   │   ├── StreamingMessage.jsx # Live streaming render with tool badges
-│   │   │   └── ChatInput.jsx        # Auto-resize textarea, Enter to send
+│   │   │   └── ChatInput.jsx        # Auto-resize textarea, paperclip upload, Enter to send
 │   │   ├── Sidebar/
-│   │   │   ├── Sidebar.jsx          # New chat, collapse toggle, profile toggle
+│   │   │   ├── Sidebar.jsx          # New chat, collapse toggle, documents panel, profile toggle
 │   │   │   ├── ThreadList.jsx       # List of conversation threads
 │   │   │   └── ThreadItem.jsx       # Thread row — click, rename, delete
+│   │   ├── Documents/
+│   │   │   └── DocumentList.jsx     # Uploaded documents list — filename, chunk count, delete
 │   │   ├── Memory/
 │   │   │   └── ProfileViewer.jsx    # LTM profile panel — view, delete entries
 │   │   └── ToolCall/
 │   │       └── ToolCallBadge.jsx    # Tool badge — running/done state, expandable output
 │   ├── context/
-│   │   └── ChatContext.jsx          # Global state + all API calls + SSE handler
+│   │   └── ChatContext.jsx          # Global state + all API calls + SSE handler + document actions
 │   ├── pages/
 │   │   └── ChatPage.jsx             # Root layout — Sidebar + ChatWindow + ProfileViewer
 │   ├── App.jsx                      # ChatProvider wrapper
@@ -60,7 +62,6 @@ frontend/
 ### State Management
 
 All application state lives in `ChatContext`. Components read from context via `useChat()` — no prop drilling anywhere.
-
 ```
 ChatContext (single source of truth)
 ├── threads[]              — sidebar thread list
@@ -70,21 +71,21 @@ ChatContext (single source of truth)
 ├── isStreaming            — input disabled during stream
 ├── profile[]              — LTM profile entries
 ├── showProfile            — profile panel visibility
-└── memoryNotification     — { keys[] } — auto-dismissed after 4s
+├── memoryNotification     — { keys[] } — auto-dismissed after 4s
+├── documents[]            — uploaded document list from DB
+├── showDocuments          — documents panel visibility in sidebar
+└── uploadStatuses[]       — per-file upload feedback (uploading/success/duplicate/error)
 ```
-
 ### SSE Streaming
 
 The backend streams responses as Server-Sent Events. The frontend reads the stream using the native `fetch` + `ReadableStream` API — not `EventSource` — because `EventSource` does not support `POST` requests.
-
 ```
 fetch POST /chat/stream
-  → ReadableStream reader
-  → TextDecoder + line buffer
-  → JSON.parse each "data: {...}" line
-  → handleSSEEvent(event)
+→ ReadableStream reader
+→ TextDecoder + line buffer
+→ JSON.parse each "data: {...}" line
+→ handleSSEEvent(event)
 ```
-
 #### SSE Event Handling
 
 | Event Type | Action |
@@ -111,9 +112,17 @@ This ensures sentinel lines never appear in the rendered chat, regardless of str
 
 ### ChatWindow
 
-Root chat component. Renders the committed message list, the live `StreamingMessage`, and the `🧠 Memory updated` notification. Handles auto-scroll to the latest message on every update.
+Root chat component. Renders the committed message list, the live `StreamingMessage`, the `🧠 Memory updated` notification, and per-file upload status pills. Handles auto-scroll to the latest message on every update.
 
 The memory notification renders as a small purple pill between the message list and the input bar — non-intrusive, passive, auto-dismisses after 4 seconds.
+
+Upload status pills appear in the same area, one per file, color-coded by state:
+- 🔵 Blue — uploading in progress
+- ✅ Green — indexed successfully (shows chunk count)
+- 📋 Yellow — already indexed (duplicate)
+- ❌ Red — upload failed
+
+Pills auto-dismiss after 5 seconds.
 
 ### MessageBubble
 
@@ -130,7 +139,7 @@ Renders the live in-progress AI response. Distinct from `MessageBubble` because 
 
 States handled:
 - **Thinking** — three bouncing dots while waiting for first content
-- **Tool running** — `ToolCallBadge` with `Using Web Search...` + pulse indicator
+- **Tool running** — `ToolCallBadge` with `Using Document Search...` + pulse indicator
 - **Streaming text** — markdown rendered live with blinking cursor
 - **Sources** — shown below text once streaming content exists
 
@@ -150,6 +159,7 @@ Click to expand and view the raw tool output (truncated to 200 characters). Each
 | `finance` | 📈 | Finance |
 | `get_datetime` | 🕐 | Date & Time |
 | `tavily_search` | 🔍 | Web Search |
+| `document_search` | 📄 | Document Search |
 
 ### Sidebar
 
@@ -158,7 +168,17 @@ Left panel containing the thread list and navigation controls.
 - **Collapse toggle** — shrinks to icon-only mode (`w-14`) for more reading space
 - **+ New Chat** — creates a thread via `POST /threads` and sets it active
 - **Thread list** — sorted by most recent, click to load history
-- **Memory Profile button** — toggles `ProfileViewer`, loads profile on open
+- **📎 Documents button** — toggles the `DocumentList` panel inline in the sidebar, loads document list on open
+- **🧠 Memory Profile button** — toggles `ProfileViewer`, loads profile on open
+
+### DocumentList
+
+Inline panel in the sidebar showing all uploaded documents.
+
+- Lists filename and chunk count per document
+- Hover over any document to reveal the `✕` delete button
+- Delete calls `DELETE /documents/{sha256}` — hard deletes from both vector store and DB
+- Shows empty state with upload instructions when no documents exist
 
 ### ThreadItem
 
@@ -182,6 +202,23 @@ Right panel showing the agent's long-term memory about the user. Opens as a thir
 ### ChatInput
 
 Auto-resizing textarea. Grows up to `128px` then scrolls. `Enter` sends, `Shift+Enter` inserts a newline. Disabled and dimmed while a response is streaming.
+
+**Paperclip upload button** — sits left of the textarea. Opens a native file picker with `multiple` and `accept=".pdf,.txt"`. On file select, upload fires immediately — before sending any message. The user can upload documents, see the status pills, then ask questions about them.
+
+File upload uses `multipart/form-data` via Axios with `Content-Type: undefined` to let Axios auto-set the correct boundary — bypassing the default `application/json` header set on the shared client instance.
+
+---
+
+## Document Upload Flow
+```
+User clicks paperclip → file picker opens (PDF/TXT, multi-select)
+→ files selected → uploadDocuments() fires immediately
+→ FormData built → POST /documents/upload
+→ uploadStatuses[] set to "uploading" per file
+→ response received → statuses updated per file
+→ DocumentList refreshed → pills auto-clear after 5s
+```
+The agent searches across all uploaded documents simultaneously when `document_search` is called. The agent only calls `document_search` when the user explicitly asks about uploaded document content — not on every message.
 
 ---
 
@@ -212,7 +249,7 @@ The backend must be running at `http://localhost:8000` before using the app. Sta
 2. Set framework preset to **Vite**
 3. Set build command: `npm run build`
 4. Set output directory: `dist`
-5. Update `src/api/client.js` baseURL and the `fetch` URL in `ChatContext.jsx` to point to your deployed backend URL before building
+5. Set `VITE_API_URL` environment variable in Vercel dashboard to your deployed backend URL
 
 ---
 
@@ -220,10 +257,12 @@ The backend must be running at `http://localhost:8000` before using the app. Sta
 
 | Area | Current | Future Improvement |
 |---|---|---|
-| Tool history on reload | Tool badges and sources visible during live streaming only — not shown on history reload | Requires a dedicated `chat_messages` table on the backend written at stream time. Frontend would read `tool_calls` from the history response and render badges identically to live stream |
-| Backend URL | Hardcoded to `localhost:8000` in two places — `api/client.js` and `ChatContext.jsx` | Move to a `.env` variable (`VITE_API_URL`) and reference via `import.meta.env` |
+| Tool history on reload | Tool badges and sources visible during live streaming only — not shown on history reload | Requires a dedicated `chat_messages` table on the backend written at stream time |
+| Backend URL | Hardcoded fallback to `localhost:8000` in `ChatContext.jsx` fetch call | Already uses `import.meta.env.VITE_API_URL` with fallback — set `VITE_API_URL` in Vercel dashboard for prod |
 | Error handling | Stream errors show a generic message | Per-event error types with user-facing descriptions |
 | Loading states | No skeleton loaders on history load or thread switch | Skeleton UI for message area during `selectThread` |
 | Authentication | No auth — single shared user | JWT token stored in context, attached as `Authorization` header on all requests |
+| Per-user documents | Global document store — all users share uploaded documents | Scoped to user after auth is added — backend already planned for `user_id` metadata on chunks |
 | Message timestamps | Not displayed | Show relative timestamps on hover |
 | Empty state | Generic placeholder text | Suggested starter prompts |
+| Document search hint | No UI guidance on how to trigger document search | Hint text near documents panel explaining to mention "my document" in the message |

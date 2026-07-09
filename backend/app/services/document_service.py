@@ -16,11 +16,7 @@ async def ingest_and_persist(
     filename: str,
     content_type: str,
 ) -> IngestResult:
-    """
-    Run the full ingest pipeline for a single file and persist metadata to DB.
-    If duplicate (already_existed=True), skips DB write — document row already exists.
-    Returns IngestResult so the route can build the response message.
-    """
+   
     try:
         result = await ingest_file(
             content=content,

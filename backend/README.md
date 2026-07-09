@@ -1,34 +1,48 @@
 # NeuroGraph AI — Backend
 
-A production-focused conversational AI agent built with LangGraph, FastAPI, and Gemini 2.5 Flash. The system features a manually constructed ReAct graph with two memory layers — short-term memory (STM) via LangGraph checkpointing and long-term memory (LTM) via a persistent user profile store.
+A production-focused conversational AI agent built with LangGraph, FastAPI, and Gemini 2.5 Flash. The system features a manually constructed ReAct graph, dual-layer memory architecture (STM + LTM), and Dynamic Agentic RAG — runtime document ingestion with agent-driven retrieval decisions, not pipeline-forced retrieval.
 
 ---
+
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     FastAPI Backend                     │
-│                                                         │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐  │
-│  │  Chat API   │    │  Threads API │    │ Memory API │  │
-│  │  /chat      │    │  /threads    │    │ /memory    │  │
-│  └──────┬──────┘    └──────────────┘    └────────────┘  │
-│         │                                               │
-│  ┌──────▼──────────────────────────────────────────┐    │
-│  │            LangGraph ReAct Agent                │    │
-│  │                                                 │    │
-│  │  reasoner ──► tool_executor ──► reasoner ──► END│    │
-│  │      │                                          │    │
-│  │      └── Gemini 2.5 Flash + 5 Tools             |    │
-│  └─────────────────────────────────────────────────┘    │
-│                                                         │
-│  ┌──────────────────┐    ┌──────────────────────────┐   │
-│  │  STM             │    │  LTM                     │   │
-│  │  SqliteSaver /   │    │  user_profile table      │   │
-│  │  AsyncPostgres   │    │  SQLite / Postgres       │   │
-│  └──────────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+FastAPI Backend
+│
+├── /chat          ├── /threads       ├── /memory        ├── /documents
+│                  │                  │                  │
+└──────────────────┴──────────────────┴──────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │  LangGraph ReAct   │
+                    │      Agent         │
+                    │                    │
+                    │  reasoner          │
+                    │     │              │
+                    │     ▼              │
+                    │  tool_executor     │
+                    │     │              │
+                    │     └──► reasoner  │
+                    │           │        │
+                    │           ▼        │
+                    │          END       │
+                    └─────────┬──────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+    ┌─────────▼──────┐ ┌──────▼──────┐ ┌─────▼──────────┐
+    │   STM          │ │    LTM      │ │   RAG Store    │
+    │                │ │             │ │                │
+    │ SqliteSaver    │ │ user_profile│ │ ChromaDB       │
+    │ (local)        │ │ table       │ │ (local)        │
+    │                │ │             │ │                │
+    │ AsyncPostgres  │ │ SQLite /    │ │ Pinecone       │
+    │ (prod)         │ │ Postgres    │ │ (prod)         │
+    └────────────────┘ └─────────────┘ └────────────────┘
+
+Tools registered in agent:
+  calculator │ tavily_search │ weather │ finance │ get_datetime │ document_search
 ```
 
 ---
@@ -40,8 +54,11 @@ A production-focused conversational AI agent built with LangGraph, FastAPI, and 
 | Framework | FastAPI |
 | Agent | LangGraph (manual ReAct graph) |
 | LLM | Gemini 2.5 Flash via `langchain-google-genai` |
+| Embeddings | Gemini `gemini-embedding-001` via `google-genai` SDK |
 | STM | LangGraph `AsyncSqliteSaver` / `AsyncPostgresSaver` |
 | LTM | SQLAlchemy + SQLite (dev) / Postgres (prod) |
+| Vector Store | ChromaDB (dev) / Pinecone (prod) |
+| PDF Extraction | PyMuPDF (`fitz`) |
 | Observability | LangSmith |
 | Config | Pydantic Settings |
 | Streaming | FastAPI `StreamingResponse` + SSE |
@@ -49,7 +66,6 @@ A production-focused conversational AI agent built with LangGraph, FastAPI, and 
 ---
 
 ## Project Structure
-
 ```
 backend/
 ├── app/
@@ -59,6 +75,7 @@ backend/
 │   │       ├── chat.py              # POST /chat/stream, GET /chat/history/{id}
 │   │       ├── threads.py           # CRUD /threads
 │   │       ├── memory.py            # CRUD /memory/profile
+│   │       ├── documents.py         # POST /documents/upload, GET /documents/, DELETE /documents/{sha256}
 │   │       └── health.py            # GET /health
 │   ├── agent/
 │   │   ├── graph.py                 # LangGraph graph definition
@@ -72,26 +89,33 @@ backend/
 │   │       ├── search.py            # Tavily web search
 │   │       ├── weather.py
 │   │       ├── finance.py           # yFinance
-│   │       └── datetime_tool.py
+│   │       ├── datetime_tool.py
+│   │       └── document_search.py   # RAG tool — searches user-uploaded documents
 │   ├── core/
 │   │   ├── config.py                # Pydantic Settings
 │   │   ├── exceptions.py            # Custom exception hierarchy
 │   │   └── logging.py               # Structured logging
 │   ├── db/
 │   │   ├── base.py                  # SQLAlchemy engine + session factory
-│   │   └── models.py                # Thread + UserProfile ORM models
+│   │   └── models.py                # Thread, UserProfile, Document ORM models
 │   ├── memory/
 │   │   ├── checkpointer.py          # STM checkpointer config
 │   │   └── ltm_store.py             # LTM CRUD operations (repository layer)
+│   ├── rag/
+│   │   ├── init.py
+│   │   ├── store.py                 # Vector store singleton — ChromaDB/Pinecone switching
+│   │   └── ingestor.py              # File validation, text extraction, chunking, embedding
 │   ├── schemas/
 │   │   ├── chat.py
 │   │   ├── thread.py
-│   │   └── memory.py
+│   │   ├── memory.py
+│   │   └── document.py              # DocumentRead, DocumentUploadResponse
 │   ├── services/
 │   │   ├── chat_service.py          # Chat business logic — streaming, SSE, LangGraph orchestration
-│   │   └── thread_service.py        # Thread CRUD service layer
+│   │   ├── thread_service.py        # Thread CRUD service layer
+│   │   └── document_service.py      # Document ingest, list, delete service layer
 │   └── main.py                      # App factory + lifespan
-├── data/                            # SQLite files (local dev, gitignored)
+├── data/                            # SQLite + ChromaDB files (local dev, gitignored)
 ├── .env                             # Local secrets (gitignored)
 ├── .env.example                     # Environment variable reference
 └── requirements.txt
@@ -115,9 +139,59 @@ Implemented as a key-value profile store backed by SQLAlchemy. The agent extract
 - **Local dev:** SQLite → `data/neurograph.db`
 - **Production:** Supabase Postgres
 
-The `memory_writer` node returns a list of keys that were saved on each turn. The chat service captures this return value and emits a dedicated `memory_update` SSE event to the frontend, which displays a non-intrusive `🧠 Memory updated` notification — the same pattern used by ChatGPT and Claude.
+The `memory_writer` node returns a list of keys saved on each turn. The chat service captures this and emits a `memory_update` SSE event to the frontend, which displays a passive `🧠 Memory updated` notification.
 
-The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval (embedding the user query and retrieving only the top-k relevant profile entries) would be the recommended approach to avoid unnecessary context window usage.
+The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval — embedding the user query and retrieving only the top-k relevant profile entries — is the recommended approach to avoid unnecessary context window usage.
+
+---
+
+## Dynamic Agentic RAG
+
+Users upload PDF or TXT documents at runtime. The backend ingests them on the fly — extracts text, chunks, embeds, and stores in a vector database. The agent then has a `document_search` tool in its existing ReAct loop and decides when to use it based on the user's question. This is not a separate mode or pipeline — retrieval is a decision made by the agent, not a forced step on every request.
+
+### Why Agentic, Not Pipeline
+
+Pipeline RAG retrieves on every message regardless of relevance — injecting document context even when the user asks a general knowledge question. Agentic RAG treats retrieval as one tool among many. The agent calls `document_search` only when the user is explicitly asking about uploaded document content. General knowledge questions are answered directly without touching the vector store.
+
+### Ingest Pipeline
+```
+Upload → Validate (size, type) → SHA256 dedup check
+→ Extract text (PyMuPDF for PDF, decode for TXT)
+→ Recursive character split → Validate chunk count
+→ Batch embed (Gemini gemini-embedding-001)
+→ Write to ChromaDB / Pinecone
+→ Persist metadata to documents table
+```
+**Deduplication:** SHA256 hash of file content. Uploading the same file twice — even with a different filename — skips re-embedding entirely and returns `already indexed — ready to query`.
+
+**Chunking:** Recursive character text splitter. Tries `\n\n`, `\n`, space, and character boundaries in order — same strategy as LangChain's `RecursiveCharacterTextSplitter`, implemented directly.
+
+**Embedding:** Gemini `gemini-embedding-001` with `output_dimensionality=768`. Batch embedding — all chunks in a single API call. Separate task types: `RETRIEVAL_DOCUMENT` at ingest, `RETRIEVAL_QUERY` at search time.
+
+**Retrieval:** Top-k=3 cosine similarity search. Chunks below a similarity threshold of 0.5 are discarded — prevents irrelevant content from reaching the agent when no relevant document exists for the query.
+
+### Vector Store — Env-Based Switching
+
+Same pattern as SQLite/Postgres switching for the main database:
+
+| Environment | Store | Config |
+|---|---|---|
+| Local (default) | ChromaDB | `PINECONE_API_KEY` absent |
+| Production | Pinecone | `PINECONE_API_KEY` set |
+
+The `init_store()` function runs once at startup in the FastAPI lifespan. Both backends implement the same interface (`add`, `query`, `delete_by_sha256`, `has_sha256`) — the rest of the codebase never knows which is active.
+
+### Current Constraints
+
+| Constraint | Value | Reason |
+|---|---|---|
+| Supported formats | PDF, TXT only | PyMuPDF + plain decode |
+| Max file size | 10MB | Validated before processing |
+| Max PDF pages | 50 | Controls text extraction scope |
+| Max chunks per document | 50 | Controls embedding API calls — applies to both PDF and TXT |
+| PDF type | Text-based only | PyMuPDF extracts digital text layer — scanned/image PDFs rejected |
+| Similarity threshold | 0.5 cosine similarity | Chunks below threshold discarded at retrieval |
+| User isolation | Global store | Per-user scoping planned after auth is added |
 
 ---
 
@@ -127,22 +201,21 @@ The ReAct graph is built manually using LangGraph's `StateGraph` — not the pre
 
 ```
 START
-  │
-  ▼
+│
+▼
 reasoner          ← Gemini 2.5 Flash, decides next action
-  │
-  ├── tool call? ──► tool_executor ──► reasoner (loop)
-  │
-  └── done? ──► END
-                 │
-                 └── memory_writer runs post-graph
-                     (fresh DB session, outside graph)
+│
+├── tool call? ──► tool_executor ──► reasoner (loop)
+│
+└── done? ──► END
+               │
+               └── memory_writer runs post-graph
+                   (fresh DB session, outside graph)
 ```
 
-**Why manual graph construction:**
-The prebuilt `create_react_agent` does not support custom post-graph hooks like the LTM memory writer, which requires a database session injected at request time rather than graph compile time.
+**Why manual graph construction:** The prebuilt `create_react_agent` does not support custom post-graph hooks like the LTM memory writer, which requires a database session injected at request time rather than graph compile time.
 
-**Recursion limit:** The graph is configured with `recursion_limit=10`, allowing a maximum of 5 tool call cycles per response. This prevents runaway ReAct loops and unexpected API cost spikes.
+**Recursion limit:** Configured with `recursion_limit=10` — maximum 5 tool call cycles per response. Prevents runaway ReAct loops (agent calling tools indefinitely without reaching a final answer) and unexpected API cost spikes.
 
 ---
 
@@ -150,15 +223,36 @@ The prebuilt `create_react_agent` does not support custom post-graph hooks like 
 
 | Tool | Type | Description |
 |---|---|---|
-| `calculator` | Custom | Evaluates mathematical expressions via `simpleeval` |
+| `calculator` | Custom | Safe math expression evaluation via `simpleeval` |
 | `tavily_search` | Built-in | Web search via Tavily API — returns sources with title + URL |
 | `weather` | Custom | Current weather for any city via wttr.in (async) |
-| `finance` | Custom | Stock price and info via yFinance |
+| `finance` | Custom | Stock price and company info via yFinance |
 | `get_datetime` | Custom | Current UTC date and time |
+| `document_search` | Custom | Semantic search across user-uploaded documents (RAG) |
 
-All tools follow the same error contract — exceptions are caught internally and returned as error strings to the LLM, which generates a user-facing message. This ensures tool failures never crash the agent.
+All tools follow the same error contract — exceptions are caught internally and returned as error strings to the LLM. Tool failures never crash the agent.
 
-Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), this runs the coroutine directly. For sync tools (`calculator`, `finance`, `datetime`), LangChain internally dispatches to a thread pool executor via `run_in_executor`, keeping the async event loop non-blocking.
+Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), this runs the coroutine directly. For sync tools, LangChain dispatches to a thread pool executor via `run_in_executor`, keeping the async event loop non-blocking.
+
+---
+
+## Exception Handling
+
+A typed exception hierarchy ensures every error surfaces with the correct HTTP status code and a meaningful message — nothing leaks raw stack traces to the client.
+```
+NeuroGraphException (base)
+├── AgentException               → 500 — graph not initialized
+├── ThreadNotFoundException      → 404 — thread lookup failed
+├── ThreadServiceException       → 500 — unexpected thread DB error
+├── ProfileEntryNotFoundException → 404 — LTM key not found
+├── LTMException                 → 500 — unexpected LTM DB error
+├── RAGException                 → 500 / 422 — ingest validation or unexpected RAG error
+└── DocumentNotFoundException    → 404 — document sha256 not found
+```
+**Route layer** raises specific 404-type exceptions for expected business logic failures.  
+**Service layer** wraps unexpected errors in typed 500-type exceptions.  
+**Global handler** catches all `NeuroGraphException` subclasses — logs warnings for 4xx, errors with stack traces for 5xx.  
+**Fallback handler** catches anything else as a generic 500 — nothing internal exposed to the client.
 
 ---
 
@@ -170,6 +264,7 @@ Routes are kept thin — request validation, existence checks, and response seri
 |---|---|---|
 | Chat service | `services/chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, title generation |
 | Thread service | `services/thread_service.py` | Thread CRUD operations |
+| Document service | `services/document_service.py` | Document ingest pipeline, list, delete |
 | LTM repository | `memory/ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
 
 ---
@@ -194,16 +289,6 @@ Routes are kept thin — request validation, existence checks, and response seri
 {"type": "error", "message": "..."}
 ```
 
-**`memory_update`** is emitted after the graph completes, when the `memory_writer` node saves one or more LTM facts. The frontend uses this event to display a passive `🧠 Memory updated` notification that auto-dismisses after 4 seconds.
-
-`MEMORY_UPDATE` sentinel lines written by the agent into its response are stripped from the SSE text stream before display, and are excluded entirely from chat history responses.
-
-### Chat History Behavior
-
-On history reload, the backend returns human messages and AI responses only. Tool execution metadata (badges, sources) is visible during live streaming but is intentionally not reconstructed from checkpoints on reload.
-
-LangGraph checkpoints are designed for agent state recovery — not as a structured message store. Reconstructing tool output from raw checkpoint data is unreliable across LangGraph versions. The correct production pattern is a dedicated `chat_messages` table written at stream time, which is planned as a future improvement.
-
 ### Threads
 
 | Method | Endpoint | Description |
@@ -219,12 +304,18 @@ LangGraph checkpoints are designed for agent state recovery — not as a structu
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/memory/profile` | Read all stored profile facts |
-| PUT | `/memory/profile` | Upsert a profile entry (admin / external use) |
+| PUT | `/memory/profile` | Upsert a profile entry |
 | PATCH | `/memory/profile/{key}` | Update a single entry by key |
 | DELETE | `/memory/profile/{key}` | Delete a single entry |
 | DELETE | `/memory/profile` | Clear entire profile |
 
-The agent writes to LTM by calling `upsert_profile_entry()` from the service layer directly — it does not go through the REST API. The `PUT` and `PATCH` routes expose the same underlying operations for external tooling or future admin UI use.
+### Documents
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/documents/upload` | Upload one or more PDF/TXT files — ingests, embeds, stores |
+| GET | `/documents/` | List all uploaded documents with metadata |
+| DELETE | `/documents/{sha256}` | Hard delete — removes from vector store and documents table |
 
 ### Health
 
@@ -261,6 +352,13 @@ FRONTEND_URL=http://localhost:5173
 DATABASE_URL=
 SQLITE_DB_PATH=./data/neurograph.db
 CHECKPOINT_DB_PATH=./data/checkpoints.db
+
+# RAG — Vector Store
+# Leave PINECONE_API_KEY empty for local (ChromaDB auto-used)
+# Set on Render dashboard for production (Pinecone auto-used)
+CHROMA_PATH=./data/chroma
+PINECONE_API_KEY=
+PINECONE_INDEX_NAME=neurograph-rag
 ```
 
 ---
@@ -297,10 +395,11 @@ Swagger UI available at `http://localhost:8000/docs`
 1. Create a new Web Service on Render, connect your GitHub repo
 2. Set build command: `pip install -r requirements.txt`
 3. Set start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. Add all environment variables from `.env.example` in Render dashboard
+4. Add all environment variables from `.env.example` in the Render dashboard
 5. Set `DATABASE_URL` to your Supabase Postgres connection string
-6. Set `APP_ENV=production`
-7. Set `FRONTEND_URL` to your Vercel deployment URL
+6. Set `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` for production RAG
+7. Set `APP_ENV=production`
+8. Set `FRONTEND_URL` to your Vercel deployment URL
 
 ---
 
@@ -312,20 +411,19 @@ Traces are visible at `https://smith.langchain.com` under your configured projec
 
 ---
 
-## Known Limitations and Future Improvements
+## Known Limitations and Planned Improvements
 
-| Area | Current | Future Improvement |
+| Area | Current State | Planned Improvement |
 |---|---|---|
-| Authentication | None — all endpoints public | JWT-based auth via `python-jose` |
-| Tool history on reload | Tool badges and sources visible during live streaming only — not persisted across page refresh. LangGraph checkpoints are not designed as a message store; reconstructing structured tool output from raw checkpoint data is unreliable. | Dedicated `chat_messages` table written at stream time — same pattern used by ChatGPT and Perplexity |
-| STM in production | AsyncPostgresSaver (Supabase) | Already implemented |
+| Authentication | None — single-user, all endpoints public | JWT-based auth; per-user thread and document scoping |
+| Per-user RAG isolation | Global document store — all users share one vector collection | Add `user_id` metadata to chunks and filter at query time post-auth |
+| Tool history on reload | Tool badges visible during live streaming only — not reconstructed from checkpoints | Dedicated `chat_messages` table written at stream time |
+| PDF support | Text-based PDFs only — scanned/image PDFs rejected | OCR via `pytesseract` or cloud Vision API |
+| Chunking | Character-based recursive splitter | Semantic chunking or token-aware splitting |
+| RAG retrieval | Top-k=3, no reranking | Cross-encoder reranker (e.g. Cohere Rerank) for precision |
+| LTM retrieval | Full profile injected on every request | Semantic retrieval — top-k relevant profile entries per query |
 | Rate limiting | None | `slowapi` middleware |
-| Input validation | Pydantic schema only | Message length limits |
 | Tests | None | `pytest` + `httpx.AsyncClient` |
-| Structured logging | Plain text | JSON logs via `python-json-logger` |
-| Calculator security | `simpleeval` — safe math evaluation | Already implemented — replaced unsafe `eval()` |
-| Pagination | All results returned | Limit/offset on `/threads` and `/memory/profile` |
-| LTM retrieval | Full profile injected on every request | Semantic retrieval — embed query and retrieve top-k relevant profile entries only |
-| Context management | Full message history sent to LLM | Trimming, summarization, or sliding window for very long conversations |
-| CPU-bound tools | Default `ThreadPoolExecutor` | `ProcessPoolExecutor` to bypass GIL for CPU-intensive tool operations |
-| Thread deletion | Thread record deleted, checkpointer records remain | Cascade delete STM checkpoint data on thread deletion |
+| Thread deletion | Thread record deleted, checkpoint records remain | Cascade delete STM checkpoint data on thread deletion |
+| Context management | Full message history sent to LLM | Trimming or summarization for very long conversations |
+| Schema migrations | `create_all` only — no migration history | Alembic (planned with auth phase) |

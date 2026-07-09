@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.memory.checkpointer import get_db_path
 from app.schemas.chat import ChatRequest, ChatHistoryRead
-from app.core.logging import get_logger
 from app.core.exceptions import ThreadNotFoundException
 from app.services.chat_service import (
     stream_agent_response,
@@ -16,7 +15,7 @@ from app.services.chat_service import (
 from app.agent.graph import get_graph_with_checkpointer
 from app.services.thread_service import get_thread_by_id
 
-logger = get_logger(__name__)
+
 router = APIRouter()
 
 

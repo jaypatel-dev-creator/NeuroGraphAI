@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 _builder: StateGraph | None = None #module level private builder variable to store graph structure
 
 
-#get all the tools in list
+#get all the tools object in list 
 def get_tools() -> list[BaseTool]:
     return [
         calculator,        #passed by reference
@@ -32,7 +32,7 @@ def get_tools() -> list[BaseTool]:
         document_search,   #RAG tool — searches across user-uploaded documents
     ]
 
-#get all the tools in dict
+#get all the tools names and their respective object  in dict 
 def get_tools_by_name(tools: list[BaseTool]) -> dict[str, BaseTool]:
     return {tool.name: tool for tool in tools}
 
@@ -53,6 +53,7 @@ def compile_graph() -> None:
     llm_with_tools = build_llm_with_tools(tools) #binding llm with tools
 
     builder = StateGraph(AgentState)
+    
 
     builder.add_node(
         "reasoner",
@@ -73,7 +74,7 @@ def compile_graph() -> None:
             "end": END,
         },
     )
-    builder.add_edge("tool_executor", "reasoner") #actual REACT loop created here
+    builder.add_edge("tool_executor", "reasoner") #loop 
 
     _builder = builder #store graph structure in module level _builder variable so same structure is used each request
     logger.info("LangGraph ReAct graph builder ready.")

@@ -33,7 +33,6 @@ class UserProfile(Base):
     )
 
 # Document model — tracks uploaded files for RAG
-# sha256 is PK ==> content-based dedup (same file different name = already indexed)
 class Document(Base):
     __tablename__ = "documents"
 

@@ -137,17 +137,14 @@ async def generate_title(message: str) -> str:
 
 
 
+
 #streaming function ==> yields chunks one by one . 
 async def stream_agent_response(
     thread_id: str,
     message: str,
     db: AsyncSession,
 ) -> AsyncGenerator[str, None]:
-    """
-    Core streaming function — runs the LangGraph ReAct agent and yields SSE events.
-    Handles text streaming, tool start/end events, memory writing, and errors.
-    Emits a memory_update SSE event when LTM keys are saved.
-    """
+   
     try:
         db_path = get_db_path()#for local, returns  checkpoint_db_path: str = "./data/checkpoints.db", while for prod , returns empty string 
         ltm_context = await build_ltm_context(db) #get all enteries 
@@ -162,7 +159,7 @@ async def stream_agent_response(
         }
 
         async with get_checkpointer_context(db_path) as checkpointer:
-            graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer 
+            graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer specific to environment 
            ##invoking graph with astream_events to support streaming 
             async for event in graph_with_memory.astream_events(
                 input_state,
@@ -226,14 +223,6 @@ async def stream_agent_response(
 
 
 def build_chat_history(state) -> list[ChatMessage]:
-    """
-    Parse LangGraph state messages into ChatMessage list.
-    - HumanMessage and AIMessage are returned.
-    - ToolMessage is intentionally skipped — raw checkpoint data is not
-      suitable for display. Tool badges and sources are shown during live
-      streaming only. This is Pattern A, same as ChatGPT's behavior.
-    - MEMORY_UPDATE lines are stripped from AIMessage content.
-    """
     messages = []
     if not state or not state.values.get("messages"):
         return messages
@@ -250,6 +239,5 @@ def build_chat_history(state) -> list[ChatMessage]:
             clean_content = "\n".join(clean_lines).strip()
             if clean_content:
                 messages.append(ChatMessage(role="ai", content=clean_content))
-        # ToolMessage intentionally skipped — see docstring above
 
     return messages

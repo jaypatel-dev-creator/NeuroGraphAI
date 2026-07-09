@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.schemas.thread import ThreadCreate, ThreadRead, ThreadUpdate
-from app.core.logging import get_logger
 from app.core.exceptions import ThreadNotFoundException
 from app.services.thread_service import (
     create_thread,
@@ -13,7 +12,6 @@ from app.services.thread_service import (
     delete_thread,
 )
 
-logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -46,6 +44,7 @@ async def get_thread_route(
     if not thread:
         raise ThreadNotFoundException(thread_id)
     return ThreadRead.model_validate(thread)
+
 
 
 #update thread

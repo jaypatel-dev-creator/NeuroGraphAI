@@ -25,9 +25,8 @@ class Settings(BaseSettings):
     checkpoint_db_path: str = "./data/checkpoints.db" # for local  path or checkpoints.db ==> stores STM checkpoints 
 
     # RAG — vector store
-    # local ==> empty (chromadb), for prod ==> set PINECONE_API_KEY on render dashboard
-    chroma_path: str = "./data/chroma"          # local ChromaDB persistence directory
-    pinecone_api_key: str = ""                  # prod: set on render dashboard; empty = use ChromaDB
+    chroma_path: str = "./data/chroma"          # local ChromaDB persistence doc storing directory 
+    pinecone_api_key: str = ""                  # prod: set on render dashboard
     pinecone_index_name: str = "neurograph-rag" # prod: pre-created index name in Pinecone console
 
     model_config = SettingsConfigDict(

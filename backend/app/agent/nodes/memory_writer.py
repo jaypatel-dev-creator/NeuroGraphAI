@@ -8,7 +8,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-MEMORY_UPDATE_PREFIX = "MEMORY_UPDATE:" #if no MEMORY_UPDATE in resopnse, then skip preprocessing entirely 
+MEMORY_UPDATE_PREFIX = "MEMORY_UPDATE:" #if no MEMORY_UPDATE line in resopnse, then skip preprocessing entirely 
 
 MEMORY_UPDATE_PATTERN = re.compile( #regex to extract key and value 
     r"MEMORY_UPDATE:\s+key=(\S+)\s+value=(.+)"
@@ -16,11 +16,7 @@ MEMORY_UPDATE_PATTERN = re.compile( #regex to extract key and value
 
 
 async def memory_writer_node(state: AgentState, db: AsyncSession) -> list[str]:
-    """
-    Parses MEMORY_UPDATE lines from the last AIMessage and upserts them to LTM.
-    Returns a list of saved keys so the caller can emit a notification.
-    Returns empty list if nothing was saved.
-    """
+
     last_message = state["messages"][-1] #extracting latest message from state which will be AIMessage cause this node will be called after llm generates response 
 
     # Gemini can return content as list or string

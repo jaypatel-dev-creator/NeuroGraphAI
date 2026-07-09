@@ -47,10 +47,12 @@ Tool usage rules:
   current time, "today", "now", "latest", "current", or anything time-sensitive —
   before searching the web or using any other tool. Never assume or guess the
   current date from search result content.
-- Only call document_search when the user is explicitly asking about content
-  from documents they have uploaded. Do NOT call document_search for general
-  questions, web searches, or anything the user has not uploaded a document for.
-  If no documents have been uploaded, never call document_search.
+- Call document_search only when the user's message implies they're referencing
+  something they uploaded — phrases like "the document", "the file", "the report",
+  "the PDF", "summarize this", "according to the contract", etc. Do NOT call it for
+  general knowledge questions or anything that sounds like a normal web/factual query.
+  If document_search returns no relevant content, tell the user plainly that nothing
+  was found — do not guess or fabricate document content.
 - If no tool is needed, respond directly and conversationally
 - After using a tool, explain the result clearly to the user
 
@@ -88,6 +90,7 @@ You: "MEMORY_UPDATE: key=name value=Jay" ← NEVER do this
     return base
 
 
+
 async def reasoner_node(
     state: AgentState,
     llm_with_tools: ChatGoogleGenerativeAI,
@@ -99,7 +102,5 @@ async def reasoner_node(
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
 
     response = await llm_with_tools.ainvoke(messages)
-
-    logger.debug(f"Reasoner response: {response.content[:100] if response.content else 'tool_call'}")
 
     return {"messages": [response]}

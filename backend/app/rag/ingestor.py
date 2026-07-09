@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from google import genai
 from google.genai import types
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -16,12 +17,29 @@ logger = get_logger(__name__)
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_PDF_PAGES = 50
+MAX_CHUNKS = 50                          # max chunks per document — controls embedding API calls
 SUPPORTED_TYPES = {"application/pdf", "text/plain"}
 
-CHUNK_SIZE = 1000       # characters per chunk
-CHUNK_OVERLAP = 200     # overlap between consecutive chunks
-TOP_K = 3               # returned by document_search tool
+CHUNK_SIZE = 1000        # characters per chunk
+CHUNK_OVERLAP = 200      # overlap between consecutive chunks
+TOP_K = 3                # returned by document_search tool
+SIMILARITY_THRESHOLD = 0.5  # minimum cosine similarity for a chunk to be returned
 
+# ── Gemini client singleton ──────────────────────────────────────────────────
+# Built once at module load — same pattern as _title_llm in chat_service.py
+
+def _build_genai_client() -> genai.Client:
+    return genai.Client(api_key=get_settings().google_api_key)
+
+_genai_client = _build_genai_client()
+
+# ── Text splitter singleton ──────────────────────────────────────────────────
+# Built once at module load — stateless, safe to reuse across requests
+
+_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=CHUNK_SIZE,
+    chunk_overlap=CHUNK_OVERLAP,
+)
 
 # ── Result dataclass returned to the upload route ────────────────────────────
 
@@ -81,76 +99,24 @@ def extract_text_from_txt(content: bytes, filename: str) -> str:
             raise RAGException(f"Failed to decode '{filename}': {str(e)}", status_code=422)
 
 
-# ── Recursive character text splitter ───────────────────────────────────────
-
-def recursive_split(text: str, chunk_size: int, overlap: int) -> list[str]:
-    separators = ["\n\n", "\n", " ", ""]
-
-    def _split(text: str, separators: list[str]) -> list[str]:
-        separator = separators[0]
-        next_separators = separators[1:]
-
-        if separator == "":
-            return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
-
-        splits = text.split(separator)
-        chunks = []
-        current = ""
-
-        for split in splits:
-            candidate = current + (separator if current else "") + split
-            if len(candidate) <= chunk_size:
-                current = candidate
-            else:
-                if current:
-                    chunks.append(current)
-                if len(split) > chunk_size and next_separators:
-                    chunks.extend(_split(split, next_separators))
-                else:
-                    current = split
-
-        if current:
-            chunks.append(current)
-
-        return chunks
-
-    raw_chunks = _split(text, separators)
-
-    if overlap == 0 or len(raw_chunks) <= 1:
-        return [c for c in raw_chunks if c.strip()]
-
-    overlapped = [raw_chunks[0]]
-    for i in range(1, len(raw_chunks)):
-        prev_tail = raw_chunks[i - 1][-overlap:]
-        overlapped.append(prev_tail + raw_chunks[i])
-
-    return [c for c in overlapped if c.strip()]
-
-
 # ── Embedding ────────────────────────────────────────────────────────────────
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     Embed a list of texts using Gemini gemini-embedding-001.
-    Called at ingest time — runs synchronously, offloaded via asyncio.to_thread from ingest_file.
-    output_dimensionality=768 keeps vectors consistent with ChromaDB collection and Pinecone index.
+    Batch embedding — all chunks sent in one API call instead of N sequential calls.
+    Runs synchronously — offloaded via asyncio.to_thread from ingest_file.
+    output_dimensionality=768 keeps vectors consistent with ChromaDB and Pinecone index.
     """
-    settings = get_settings()
-    client = genai.Client(api_key=settings.google_api_key)
-
-    embeddings = []
-    for text in texts:
-        result = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=text,
-            config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT",
-                output_dimensionality=768,
-            ),
-        )
-        embeddings.append(result.embeddings[0].values)
-
-    return embeddings
+    result = _genai_client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=texts,  # full list — one API call for all chunks
+        config=types.EmbedContentConfig(
+            task_type="RETRIEVAL_DOCUMENT",
+            output_dimensionality=768,
+        ),
+    )
+    return [e.values for e in result.embeddings]
 
 
 def embed_query(text: str) -> list[float]:
@@ -159,10 +125,7 @@ def embed_query(text: str) -> list[float]:
     Uses RETRIEVAL_QUERY task type — different from document embedding, as per Gemini docs.
     Runs synchronously — called directly from document_search tool (sync @tool).
     """
-    settings = get_settings()
-    client = genai.Client(api_key=settings.google_api_key)
-
-    result = client.models.embed_content(
+    result = _genai_client.models.embed_content(
         model="gemini-embedding-001",
         contents=text,
         config=types.EmbedContentConfig(
@@ -181,13 +144,14 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
     1. Validate size and type
     2. Compute SHA256 — check dedup
     3. Extract text
-    4. Chunk
-    5. Embed (offloaded to thread — blocking Gemini API calls)
-    6. Write to vector store
+    4. Chunk via LangChain RecursiveCharacterTextSplitter
+    5. Validate chunk count — applies to both PDF and TXT
+    6. Embed (batch — one API call, offloaded to thread)
+    7. Write to vector store
     Returns IngestResult with already_existed=True if duplicate, False if freshly indexed.
     """
 
-    # 1. Validate
+    # 1. Validate size and type
     if len(content) > MAX_FILE_SIZE_BYTES:
         raise RAGException(
             f"'{filename}' exceeds the 10MB limit ({len(content) / 1024 / 1024:.1f}MB uploaded).",
@@ -219,17 +183,27 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
     else:
         text = extract_text_from_txt(content, filename)
 
-    # 4. Chunk
-    chunks = recursive_split(text, CHUNK_SIZE, CHUNK_OVERLAP)
+    # 4. Chunk — LangChain RecursiveCharacterTextSplitter
+    # Tries \n\n, \n, space, character boundaries in order — standard production chunking strategy
+    chunks = _splitter.split_text(text)
     if not chunks:
         raise RAGException(f"'{filename}' produced no text chunks after processing.", status_code=422)
 
+    # 5. Validate chunk count — enforced for both PDF and TXT
+    # Controls max embedding API calls and vector store size per document
+    if len(chunks) > MAX_CHUNKS:
+        raise RAGException(
+            f"'{filename}' produced {len(chunks)} chunks — max allowed is {MAX_CHUNKS}. "
+            f"Try a smaller or less dense file.",
+            status_code=422,
+        )
+
     logger.info(f"Chunked '{filename}' into {len(chunks)} chunks")
 
-    # 5. Embed — offloaded to thread pool to avoid blocking the async event loop
+    # 6. Embed — batch call, offloaded to thread pool to avoid blocking the async event loop
     embeddings = await asyncio.to_thread(embed_texts, chunks)
 
-    # 6. Write to store
+    # 7. Write to store
     chunk_ids = [f"{sha256}_{i}" for i in range(len(chunks))]
     metadatas = [
         {"sha256": sha256, "filename": filename, "chunk_index": i}

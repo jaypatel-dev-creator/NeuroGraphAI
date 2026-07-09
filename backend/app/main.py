@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     os.environ["TAVILY_API_KEY"] = settings.tavily_api_key
     logger.info("Tavily API key set.")
 
+
     # Data directories
     if not settings.database_url: #for local, create neurograph.db file and checkpoints.db file
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)

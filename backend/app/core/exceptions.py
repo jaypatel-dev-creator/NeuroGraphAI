@@ -24,6 +24,9 @@ class ThreadNotFoundException(NeuroGraphException):
             status_code=404,
         )
 
+class ThreadServiceException(NeuroGraphException):
+    pass
+
 class ProfileEntryNotFoundException(NeuroGraphException):
     def __init__(self, key: str):
         super().__init__(

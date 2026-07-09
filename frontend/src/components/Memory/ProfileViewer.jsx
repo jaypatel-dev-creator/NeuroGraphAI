@@ -7,7 +7,7 @@ function formatKey(key) {
 }
 
 function formatRelativeTime(dateStr) {
-  const date = new Date(dateStr)
+  const date = new Date(dateStr + 'Z')  // append 'Z' to treat as UTC — prevents local timezone offset
   const now = new Date()
   const diffMs = now - date
   const diffMins = Math.floor(diffMs / 60000)

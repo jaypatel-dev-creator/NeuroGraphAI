@@ -11,11 +11,10 @@ from app.memory.ltm_store import (
     update_profile_entry,
 )
 from app.schemas.memory import ProfileRead, ProfileEntry, ProfileUpsert, ProfileEntryUpdate
-from app.core.logging import get_logger
 
-logger = get_logger(__name__)
 
 router = APIRouter()
+
 
 
 #get all entries

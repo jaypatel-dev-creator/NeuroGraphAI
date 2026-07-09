@@ -1,12 +1,17 @@
+from datetime import datetime, timezone
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import UserProfile
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.core.exceptions import LTMException  # ← added
+from app.core.exceptions import LTMException
 
 logger = get_logger(__name__)
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 #getting all entries
@@ -25,26 +30,27 @@ async def upsert_profile_entry(
     value: str,
 ) -> UserProfile:
     settings = get_settings()
+    now = utcnow()  # single timestamp for consistency
 
     try:
         if settings.database_url:
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             stmt = (
                 pg_insert(UserProfile)
-                .values(key=key, value=value)
+                .values(key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
                     index_elements=["key"],
-                    set_={"value": value},
+                    set_={"value": value, "updated_at": now},  # explicitly update timestamp
                 )
             )
         else:
             from sqlalchemy.dialects.sqlite import insert as sqlite_insert
             stmt = (
                 sqlite_insert(UserProfile)
-                .values(key=key, value=value)
+                .values(key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
                     index_elements=["key"],
-                    set_={"value": value},
+                    set_={"value": value, "updated_at": now},  # explicitly update timestamp
                 )
             )
 
@@ -58,7 +64,7 @@ async def upsert_profile_entry(
         logger.info(f"LTM upsert — key: {key}")
         return entry
     except LTMException:
-        raise  # ← don't re-wrap, let it propagate as-is
+        raise
     except Exception as e:
         raise LTMException(f"Failed to upsert LTM entry '{key}': {str(e)}")
 
@@ -104,6 +110,7 @@ async def update_profile_entry(db: AsyncSession, key: str, value: str) -> UserPr
             return None
 
         entry.value = value
+        entry.updated_at = utcnow()  # explicitly set on ORM update too for consistency
         await db.flush()
         return entry
     except LTMException:

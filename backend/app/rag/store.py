@@ -1,36 +1,29 @@
 from pathlib import Path
-
+from app.core.exceptions import RAGException
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 COLLECTION_NAME = "neurograph_docs"  # single global collection for now (per-user after auth)
-EMBEDDING_DIMENSION = 768            # Gemini text-embedding-004 output dimension
+EMBEDDING_DIMENSION = 768            # gemini-embedding-001 with output_dimensionality=768
 
-# Module-level singleton — set once in lifespan, read by document_search tool and ingestor
-_store = None  # will be either ChromaVectorStore or PineconeVectorStore instance
+_store = None  # module level variable ==>  will be either ChromaVectorStore or PineconeVectorStore instance 
 
 
 def use_pinecone() -> bool:
-    """True when PINECONE_API_KEY is set in env — same pattern as use_postgres_checkpointer()."""
     return bool(get_settings().pinecone_api_key)
 
 
+
 def get_store():
-    """Return the initialized vector store singleton. Raises if init_store() was not called."""
     if _store is None:
-        raise RuntimeError("Vector store not initialized. Call init_store() on startup.")
+        raise RAGException("Vector store not initialized. Call init_store() on startup.")
     return _store
 
 
 def init_store() -> None:
-    """
-    Initialize the vector store singleton based on environment.
-    Called once in lifespan startup — same pattern as compile_graph().
-    local  ==> PINECONE_API_KEY absent ==> ChromaDB at chroma_path
-    prod   ==> PINECONE_API_KEY present ==> Pinecone index
-    """
+    
     global _store
     settings = get_settings()
 
@@ -67,19 +60,34 @@ class ChromaVectorStore:
             metadatas=metadatas,
         )
 
-    def query(self, embedding: list[float], k: int) -> list[dict]:
-        """
-        Return top-k chunks as list of dicts with keys: document, metadata.
-        ChromaDB returns results grouped by field — we re-shape into per-chunk dicts.
-        """
+    def query(self, embedding: list[float], k: int, threshold: float = None) -> list[dict]:
+        
+        from app.rag.ingestor import SIMILARITY_THRESHOLD
+        if threshold is None:
+            threshold = SIMILARITY_THRESHOLD
+
+        # Guard: never request more results than exist in collection
+        count = self.collection.count()
+        if count == 0:
+            return []
+        n_results = min(k, count)
+
         results = self.collection.query(
             query_embeddings=[embedding],
-            n_results=k,
-            include=["documents", "metadatas"],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"],  # distances needed for threshold
         )
         chunks = []
-        for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-            chunks.append({"document": doc, "metadata": meta})
+        for doc, meta, distance in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        ):
+            # ChromaDB cosine distance: similarity = 1 - distance
+            similarity = 1 - distance
+            if similarity >= threshold:
+                chunks.append({"document": doc, "metadata": meta})
+
         return chunks
 
     def delete_by_sha256(self, sha256: str) -> None:
@@ -107,20 +115,28 @@ class PineconeVectorStore:
             vectors.append({"id": chunk_id, "values": embedding, "metadata": pinecone_meta})
         self.index.upsert(vectors=vectors)
 
-    def query(self, embedding: list[float], k: int) -> list[dict]:
-        """Return top-k chunks. Pinecone returns metadata — we extract 'text' back out."""
+    def query(self, embedding: list[float], k: int, threshold: float = None) -> list[dict]:
+        """
+        Return top-k chunks. Pinecone returns metadata — we extract 'text' back out.
+        Applies similarity threshold using Pinecone score (already cosine similarity, not distance).
+        """
+        from app.rag.ingestor import SIMILARITY_THRESHOLD
+        if threshold is None:
+            threshold = SIMILARITY_THRESHOLD
+
         results = self.index.query(vector=embedding, top_k=k, include_metadata=True)
         chunks = []
         for match in results["matches"]:
-            meta = dict(match["metadata"])
-            text = meta.pop("text", "")  # remove 'text' from meta before returning
-            chunks.append({"document": text, "metadata": meta})
+            # Pinecone score is cosine similarity directly — no conversion needed
+            if match["score"] >= threshold:
+                meta = dict(match["metadata"])
+                text = meta.pop("text", "")
+                chunks.append({"document": text, "metadata": meta})
         return chunks
 
     def delete_by_sha256(self, sha256: str) -> None:
         """Delete all vectors with this sha256. Pinecone requires fetch+delete by ID
         since it doesn't support metadata-only deletes on starter plans."""
-        # List all IDs with this sha256 via fetch — works for starter/serverless indexes
         results = self.index.query(
             vector=[0.0] * EMBEDDING_DIMENSION,
             top_k=10000,
