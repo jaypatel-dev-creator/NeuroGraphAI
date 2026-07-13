@@ -15,6 +15,7 @@ from app.schemas.document import DocumentRead, DocumentUploadResponse
 router = APIRouter()
 
 
+
 # Upload one or more documents
 @router.post("/upload", response_model=List[DocumentUploadResponse])
 async def upload_documents(

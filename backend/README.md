@@ -1,6 +1,6 @@
 # NeuroGraph AI — Backend
 
-A production-focused conversational AI agent built with LangGraph, FastAPI, and Gemini 2.5 Flash. The system features a manually constructed ReAct graph, dual-layer memory architecture (STM + LTM), and Dynamic Agentic RAG — runtime document ingestion with agent-driven retrieval decisions, not pipeline-forced retrieval.
+A production-focused conversational AI agent built with LangGraph, FastAPI, and Gemini 3.1 Flash Lite. The system features a manually constructed ReAct graph, dual-layer memory architecture (STM + LTM), and Dynamic Agentic RAG — runtime document ingestion with agent-driven retrieval decisions, not pipeline-forced retrieval.
 
 ---
 
@@ -47,13 +47,14 @@ Tools registered in agent:
 
 ---
 
+
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Framework | FastAPI |
 | Agent | LangGraph (manual ReAct graph) |
-| LLM | Gemini 2.5 Flash via `langchain-google-genai` |
+| LLM | Gemini 3.1 Flash Lite via `langchain-google-genai` |
 | Embeddings | Gemini `gemini-embedding-001` via `google-genai` SDK |
 | STM | LangGraph `AsyncSqliteSaver` / `AsyncPostgresSaver` |
 | LTM | SQLAlchemy + SQLite (dev) / Postgres (prod) |
@@ -64,6 +65,8 @@ Tools registered in agent:
 | Streaming | FastAPI `StreamingResponse` + SSE |
 
 ---
+
+
 
 ## Project Structure
 ```
@@ -151,7 +154,19 @@ Users upload PDF or TXT documents at runtime. The backend ingests them on the fl
 
 ### Why Agentic, Not Pipeline
 
-Pipeline RAG retrieves on every message regardless of relevance — injecting document context even when the user asks a general knowledge question. Agentic RAG treats retrieval as one tool among many. The agent calls `document_search` only when the user is explicitly asking about uploaded document content. General knowledge questions are answered directly without touching the vector store.
+Pipeline RAG retrieves on every message regardless of relevance — injecting document context even when the user asks a general knowledge question. Agentic RAG treats retrieval as one tool among many. The agent calls `document_search` only when it determines the user's question relates to uploaded document content. General knowledge questions are answered directly without touching the vector store.
+
+### Document Grounding
+
+At every request, `chat_service.py` queries the `documents` table and injects the current upload state into the system prompt as `doc_context`:
+```
+# When documents exist:
+[System: User has 2 document(s) uploaded: report.pdf, contract.txt. Only call document_search when the user is asking about content from these documents.]
+
+# When no documents exist:
+[System: User has no documents uploaded. Do not call document_search.]
+```
+---
 
 ### Ingest Pipeline
 ```
@@ -164,7 +179,8 @@ Upload → Validate (size, type) → SHA256 dedup check
 ```
 **Deduplication:** SHA256 hash of file content. Uploading the same file twice — even with a different filename — skips re-embedding entirely and returns `already indexed — ready to query`.
 
-**Chunking:** Recursive character text splitter. Tries `\n\n`, `\n`, space, and character boundaries in order — same strategy as LangChain's `RecursiveCharacterTextSplitter`, implemented directly.
+**Chunking:** via LangChain's RecursiveCharacterTextSplitter.
+
 
 **Embedding:** Gemini `gemini-embedding-001` with `output_dimensionality=768`. Batch embedding — all chunks in a single API call. Separate task types: `RETRIEVAL_DOCUMENT` at ingest, `RETRIEVAL_QUERY` at search time.
 
@@ -203,7 +219,7 @@ The ReAct graph is built manually using LangGraph's `StateGraph` — not the pre
 START
 │
 ▼
-reasoner          ← Gemini 2.5 Flash, decides next action
+reasoner          ← Gemini 3.1 Flash Lite, decides next action
 │
 ├── tool call? ──► tool_executor ──► reasoner (loop)
 │
@@ -249,9 +265,9 @@ NeuroGraphException (base)
 ├── RAGException                 → 500 / 422 — ingest validation or unexpected RAG error
 └── DocumentNotFoundException    → 404 — document sha256 not found
 ```
-**Route layer** raises specific 404-type exceptions for expected business logic failures.  
-**Service layer** wraps unexpected errors in typed 500-type exceptions.  
-**Global handler** catches all `NeuroGraphException` subclasses — logs warnings for 4xx, errors with stack traces for 5xx.  
+**Route layer** raises specific 404-type exceptions for expected business logic failures.
+**Service layer** wraps unexpected errors in typed 500-type exceptions.
+**Global handler** catches all `NeuroGraphException` subclasses — logs warnings for 4xx, errors with stack traces for 5xx.
 **Fallback handler** catches anything else as a generic 500 — nothing internal exposed to the client.
 
 ---
@@ -262,7 +278,7 @@ Routes are kept thin — request validation, existence checks, and response seri
 
 | Service | Location | Responsibility |
 |---|---|---|
-| Chat service | `services/chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, title generation |
+| Chat service | `services/chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, doc context injection, title generation |
 | Thread service | `services/thread_service.py` | Thread CRUD operations |
 | Document service | `services/document_service.py` | Document ingest pipeline, list, delete |
 | LTM repository | `memory/ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
@@ -419,8 +435,9 @@ Traces are visible at `https://smith.langchain.com` under your configured projec
 | Per-user RAG isolation | Global document store — all users share one vector collection | Add `user_id` metadata to chunks and filter at query time post-auth |
 | Tool history on reload | Tool badges visible during live streaming only — not reconstructed from checkpoints | Dedicated `chat_messages` table written at stream time |
 | PDF support | Text-based PDFs only — scanned/image PDFs rejected | OCR via `pytesseract` or cloud Vision API |
-| Chunking | Character-based recursive splitter | Semantic chunking or token-aware splitting |
+| Chunking | Character-based recursive splitter (LangChain) | Semantic chunking or token-aware splitting |
 | RAG retrieval | Top-k=3, no reranking | Cross-encoder reranker (e.g. Cohere Rerank) for precision |
+| Similarity threshold | Fixed at 0.5 — not validated against real queries | Evaluate against a query set and tune, or make configurable via env var |
 | LTM retrieval | Full profile injected on every request | Semantic retrieval — top-k relevant profile entries per query |
 | Rate limiting | None | `slowapi` middleware |
 | Tests | None | `pytest` + `httpx.AsyncClient` |

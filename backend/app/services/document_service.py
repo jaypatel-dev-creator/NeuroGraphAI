@@ -43,7 +43,6 @@ async def ingest_and_persist(
 
 
 async def list_documents(db: AsyncSession) -> list[Document]:
-    """Return all documents ordered by most recently uploaded."""
     try:
         result = await db.execute(
             select(Document).order_by(Document.uploaded_at.desc())
@@ -54,7 +53,6 @@ async def list_documents(db: AsyncSession) -> list[Document]:
 
 
 async def get_document_by_sha256(db: AsyncSession, sha256: str) -> Document | None:
-    """Return a document by sha256 or None if not found."""
     try:
         result = await db.execute(
             select(Document).where(Document.sha256 == sha256)
@@ -65,10 +63,6 @@ async def get_document_by_sha256(db: AsyncSession, sha256: str) -> Document | No
 
 
 async def delete_document(db: AsyncSession, sha256: str) -> None:
-    """
-    Hard delete — removes all chunks from vector store and the document row from DB.
-    Caller must verify document exists before calling this.
-    """
     try:
         store = get_store()
         store.delete_by_sha256(sha256)

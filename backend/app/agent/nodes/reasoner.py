@@ -13,15 +13,15 @@ logger = get_logger(__name__)
 def build_llm_with_tools(tools: list[BaseTool]) -> ChatGoogleGenerativeAI:
     settings = get_settings()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         google_api_key=settings.google_api_key,
         temperature=0.7,
     )
     return llm.bind_tools(tools)
 
 
-# Called every turn inside reasoner_node — builds fresh system prompt with updated LTM
-def build_system_prompt(tools: list[BaseTool], ltm_context: str) -> str:
+# Called every turn inside reasoner_node — builds fresh system prompt with updated LTM and doc context
+def build_system_prompt(tools: list[BaseTool], ltm_context: str, doc_context: str) -> str:
     tool_descriptions = "\n".join(
         f"- {t.name}: {t.description}" for t in tools
     )
@@ -47,10 +47,10 @@ Tool usage rules:
   current time, "today", "now", "latest", "current", or anything time-sensitive —
   before searching the web or using any other tool. Never assume or guess the
   current date from search result content.
-- Call document_search only when the user's message implies they're referencing
-  something they uploaded — phrases like "the document", "the file", "the report",
-  "the PDF", "summarize this", "according to the contract", etc. Do NOT call it for
-  general knowledge questions or anything that sounds like a normal web/factual query.
+- Call document_search only when the user has uploaded documents AND is asking
+  about their content. If no documents are uploaded, never call document_search.
+  If documents are uploaded but the question is general knowledge, answer directly
+  without calling document_search.
   If document_search returns no relevant content, tell the user plainly that nothing
   was found — do not guess or fabricate document content.
 - If no tool is needed, respond directly and conversationally
@@ -87,8 +87,10 @@ You: "MEMORY_UPDATE: key=name value=Jay" ← NEVER do this
         base += f"\n\nWhat you already know about the user:\n{ltm_context}"
         base += "\n\nUse this context naturally in conversation without explicitly saying 'I remember that...'"
 
-    return base
+    if doc_context:
+        base += f"\n\n{doc_context}"
 
+    return base
 
 
 async def reasoner_node(
@@ -98,7 +100,11 @@ async def reasoner_node(
 ) -> dict:
     logger.debug("Reasoner node executing")
 
-    system_prompt = build_system_prompt(tools, state.get("ltm_context", ""))
+    system_prompt = build_system_prompt(
+        tools,
+        state.get("ltm_context", ""),
+        state.get("doc_context", ""),
+    )
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
 
     response = await llm_with_tools.ainvoke(messages)

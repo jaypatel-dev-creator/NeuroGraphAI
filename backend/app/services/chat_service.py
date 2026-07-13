@@ -2,11 +2,13 @@ import json
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.db.base import AsyncSessionLocal
+from app.db.models import Document
 from app.memory.ltm_store import get_profile
 from app.agent.nodes.memory_writer import memory_writer_node
 from app.agent.graph import get_graph_with_checkpointer
@@ -18,13 +20,12 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-
 # LLM client for title generation — created once at module load
 
 def _build_title_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         google_api_key=settings.google_api_key,
         temperature=0.7,
     )
@@ -60,7 +61,6 @@ def get_checkpointer_context(db_path: str):
 def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
     sources = []
 
-   
     is_tavily = (
         "tavily" in tool_name.lower()
         or (
@@ -72,7 +72,6 @@ def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
 
     if is_tavily:
         try:
-            # raw_output can be a dict (Tavily response) or list
             if isinstance(raw_output, dict) and "results" in raw_output:
                 results = raw_output.get("results", [])
                 sources = [
@@ -121,6 +120,22 @@ async def build_ltm_context(db: AsyncSession) -> str:
     return "\n".join(lines)
 
 
+async def build_doc_context(db: AsyncSession) -> str:
+    """
+    Load all uploaded document names from DB and return as system context string.
+    Grounds the agent's document_search decisions in actual upload state —
+    not pure phrasing inference. Same pattern as build_ltm_context.
+    """
+    result = await db.execute(select(Document.filename))
+    filenames = [row[0] for row in result.fetchall()]
+
+    if not filenames:
+        return "[System: User has no documents uploaded. Do not call document_search.]"
+
+    names = ", ".join(filenames)
+    return f"[System: User has {len(filenames)} document(s) uploaded: {names}. Only call document_search when the user is asking about content from these documents.]"
+
+
 async def generate_title(message: str) -> str:
     """Generate a short 4-5 word title for a conversation. Falls back to 'New Chat' on failure."""
     try:
@@ -136,18 +151,17 @@ async def generate_title(message: str) -> str:
         return "New Chat"
 
 
-
-
-#streaming function ==> yields chunks one by one . 
+#streaming function ==> yields chunks one by one
 async def stream_agent_response(
     thread_id: str,
     message: str,
     db: AsyncSession,
 ) -> AsyncGenerator[str, None]:
-   
+
     try:
-        db_path = get_db_path()#for local, returns  checkpoint_db_path: str = "./data/checkpoints.db", while for prod , returns empty string 
-        ltm_context = await build_ltm_context(db) #get all enteries 
+        db_path = get_db_path()
+        ltm_context = await build_ltm_context(db)
+        doc_context = await build_doc_context(db)  # grounding agent in actual document state
 
         config = {
             "configurable": {"thread_id": thread_id},
@@ -156,11 +170,11 @@ async def stream_agent_response(
         input_state = {
             "messages": [HumanMessage(content=message)],
             "ltm_context": ltm_context,
+            "doc_context": doc_context,  # injected alongside ltm_context
         }
 
         async with get_checkpointer_context(db_path) as checkpointer:
-            graph_with_memory = get_graph_with_checkpointer(checkpointer) #actual graph compilation based on checkpointer specific to environment 
-           ##invoking graph with astream_events to support streaming 
+            graph_with_memory = get_graph_with_checkpointer(checkpointer)
             async for event in graph_with_memory.astream_events(
                 input_state,
                 config=config,
@@ -205,7 +219,6 @@ async def stream_agent_response(
                     try:
                         saved_keys = await memory_writer_node(state.values, fresh_db)
                         await fresh_db.commit()
-                        # Emit memory_update event if any keys were saved
                         if saved_keys:
                             yield format_sse({
                                 "type": "memory_update",

@@ -7,7 +7,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Local-E07B39?logoColor=white)
 ![Pinecone](https://img.shields.io/badge/Pinecone-Production-00B388?logoColor=white)
-![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?logo=google&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-3.1_Flash_Lite-4285F4?logo=google&logoColor=white)
 
 A full-stack conversational AI agent with dual-layer memory and Dynamic Agentic RAG. Built on a manually constructed LangGraph ReAct graph — not a wrapper around prebuilt agent abstractions.
 

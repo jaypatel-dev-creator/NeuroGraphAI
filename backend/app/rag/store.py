@@ -4,11 +4,13 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
 #constants 
 COLLECTION_NAME = "neurograph_docs"  # single global collection for now (per-user after auth)
 EMBEDDING_DIMENSION = 768            # gemini-embedding-001 with output_dimensionality=768
-#modul level variables and functions 
-_store = None  #  will be either ChromaVectorStore or PineconeVectorStore instance 
+
+#module level variables and functions 
+_store = None  # will be either ChromaVectorStore or PineconeVectorStore instance 
 
 def use_pinecone() -> bool:
     return bool(get_settings().pinecone_api_key)
@@ -34,7 +36,7 @@ def init_store() -> None:
         client = chromadb.PersistentClient(path=settings.chroma_path)
         collection = client.get_or_create_collection(
             name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},  # cosine similarity for embedding search
+            metadata={"hnsw:space": "cosine"},
         )
         _store = ChromaVectorStore(collection)
         logger.info(f"RAG store: ChromaDB — path: {settings.chroma_path}")
@@ -52,12 +54,7 @@ class ChromaVectorStore:
             metadatas=metadatas,
         )
 
-    def query(self, embedding: list[float], k: int, threshold: float = None) -> list[dict]:
-        
-        from app.rag.ingestor import SIMILARITY_THRESHOLD
-        if threshold is None:
-            threshold = SIMILARITY_THRESHOLD
-
+    def query(self, embedding: list[float], k: int = 3, threshold: float = 0.5) -> list[dict]:
         # Guard: never request more results than exist in collection
         count = self.collection.count()
         if count == 0:
@@ -67,20 +64,20 @@ class ChromaVectorStore:
         results = self.collection.query(
             query_embeddings=[embedding],
             n_results=n_results,
-            include=["documents", "metadatas", "distances"],  
+            include=["documents", "metadatas", "distances"],
         )
-        chunks = [] 
+        chunks = []
         for doc, meta, distance in zip(
             results["documents"][0],
             results["metadatas"][0],
-            results["distances"][0], # distances are returned to filter our by cosine similarity 
+            results["distances"][0],
         ):
             # ChromaDB cosine distance: similarity = 1 - distance
             similarity = 1 - distance
             if similarity >= threshold:
                 chunks.append({"document": doc, "metadata": meta})
 
-        return chunks #only document and metadata are returned 
+        return chunks
 
     def delete_by_sha256(self, sha256: str) -> None:
         self.collection.delete(where={"sha256": sha256})
@@ -96,23 +93,16 @@ class PineconeVectorStore:
         self.index = index
 
     def add(self, ids: list[str], embeddings: list[list[float]], documents: list[str], metadatas: list[dict]) -> None:
-       
         vectors = []
         for chunk_id, embedding, doc, meta in zip(ids, embeddings, documents, metadatas):
-            pinecone_meta = {**meta, "text": doc}  # store raw text in metadata  for retrieval
+            pinecone_meta = {**meta, "text": doc}
             vectors.append({"id": chunk_id, "values": embedding, "metadata": pinecone_meta})
         self.index.upsert(vectors=vectors)
 
-    def query(self, embedding: list[float], k: int, threshold: float = None) -> list[dict]:
-        
-        from app.rag.ingestor import SIMILARITY_THRESHOLD
-        if threshold is None:
-            threshold = SIMILARITY_THRESHOLD
-
+    def query(self, embedding: list[float], k: int = 3, threshold: float = 0.5) -> list[dict]:
         results = self.index.query(vector=embedding, top_k=k, include_metadata=True)
         chunks = []
         for match in results["matches"]:
-            # Pinecone score is cosine similarity directly — no conversion needed
             if match["score"] >= threshold:
                 meta = dict(match["metadata"])
                 text = meta.pop("text", "")
@@ -120,7 +110,6 @@ class PineconeVectorStore:
         return chunks
 
     def delete_by_sha256(self, sha256: str) -> None:
-       
         results = self.index.query(
             vector=[0.0] * EMBEDDING_DIMENSION,
             top_k=10000,
@@ -132,7 +121,6 @@ class PineconeVectorStore:
             self.index.delete(ids=ids_to_delete)
 
     def has_sha256(self, sha256: str) -> bool:
-        """Check if any vector with this sha256 exists."""
         results = self.index.query(
             vector=[0.0] * EMBEDDING_DIMENSION,
             top_k=1,

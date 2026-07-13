@@ -1,6 +1,6 @@
 from langchain_core.tools import tool
 
-from app.rag.ingestor import embed_query, TOP_K
+from app.rag.ingestor import embed_query, TOP_K,SIMILARITY_THRESHOLD
 from app.rag.store import get_store
 from app.core.logging import get_logger
 
@@ -12,8 +12,8 @@ logger = get_logger(__name__)
 def document_search(query: str) -> str:
     """
     Search across user-uploaded documents to find relevant information.
-    Use this tool ONLY when the user is asking a question about documents they have uploaded.
-    Do NOT use this for general knowledge questions or web searches.
+    Only call this tool when the system context confirms documents are uploaded
+    and the user is asking about their content.
     Input must be a search query string describing what to look for in the documents.
     Example: 'What are the key findings in the report?', 'summarize the contract terms'
     """
@@ -24,7 +24,7 @@ def document_search(query: str) -> str:
         query_embedding = embed_query(query)
 
         # Retrieve top-k chunks
-        chunks = store.query(embedding=query_embedding, k=TOP_K)
+        chunks = store.query(embedding=query_embedding, k=TOP_K, threshold=SIMILARITY_THRESHOLD)
 
         if not chunks:
             return "No relevant content found in the uploaded documents for this query."

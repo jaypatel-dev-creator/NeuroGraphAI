@@ -11,6 +11,7 @@ class DocumentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+
 class DocumentUploadResponse(BaseModel):
     filename: str
     sha256: str
