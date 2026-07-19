@@ -81,9 +81,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    allowed_origins = [settings.frontend_url, "https://neuro-graph-ai.vercel.app"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_url],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
