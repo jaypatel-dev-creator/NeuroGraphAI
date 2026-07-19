@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
-#request schema for Post/chat/stream
+
 class ChatRequest(BaseModel):
     thread_id: str
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
 
 
 class Source(BaseModel):

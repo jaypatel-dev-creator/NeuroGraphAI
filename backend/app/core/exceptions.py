@@ -13,7 +13,7 @@ class NeuroGraphException(Exception):
         self.status_code = status_code
         super().__init__(message)
 
-
+#sub exceptions 
 class AgentException(NeuroGraphException):
     pass
 
@@ -39,6 +39,22 @@ class LTMException(NeuroGraphException):
 
 class RAGException(NeuroGraphException):
     pass
+
+#authentication
+class UnauthorizedException(NeuroGraphException):
+    def __init__(self, message: str = "Authentication required."):
+        super().__init__(message=message, status_code=401)
+#authorization 
+class ForbiddenException(NeuroGraphException):
+    def __init__(self, message: str = "You do not have permission to access this resource."):
+        super().__init__(message=message, status_code=403)
+
+class UserAlreadyExistsException(NeuroGraphException):
+    def __init__(self, email: str):
+        super().__init__(
+            message=f"An account with email '{email}' already exists.",
+            status_code=409,
+        )
 
 class DocumentNotFoundException(NeuroGraphException):
     def __init__(self, sha256: str):

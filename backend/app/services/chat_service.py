@@ -19,27 +19,28 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Lazily initialized on first generate_title() call — not at import time.
+# Module-level init runs before lifespan setup and before .env is validated,
+# which causes opaque crashes if google_api_key is missing.
+_title_llm: ChatGoogleGenerativeAI | None = None
 
-# LLM client for title generation — created once at module load
 
-def _build_title_llm() -> ChatGoogleGenerativeAI:
-    settings = get_settings()
-    return ChatGoogleGenerativeAI(
-        model="gemini-3.1-flash-lite",
-        google_api_key=settings.google_api_key,
-        temperature=0.7,
-    )
-
-_title_llm = _build_title_llm()
+def _get_title_llm() -> ChatGoogleGenerativeAI:
+    global _title_llm
+    if _title_llm is None:
+        settings = get_settings()
+        _title_llm = ChatGoogleGenerativeAI(
+            model="gemini-3.1-flash-lite",
+            google_api_key=settings.google_api_key,
+        )
+    return _title_llm
 
 
 def format_sse(data: dict) -> str:
-    """Format a dict as an SSE event string."""
     return f"data: {json.dumps(data)}\n\n"
 
 
 def extract_text_content(content) -> str:
-    """Normalize Gemini content — handles both string and list of parts."""
     if isinstance(content, list):
         return " ".join(
             part.get("text", "") if isinstance(part, dict) else str(part)
@@ -49,7 +50,6 @@ def extract_text_content(content) -> str:
 
 
 def get_checkpointer_context(db_path: str):
-    """Return the correct checkpointer based on environment — SQLite local, Postgres prod."""
     if use_postgres_checkpointer():
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         settings = get_settings()
@@ -75,31 +75,21 @@ def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
             if isinstance(raw_output, dict) and "results" in raw_output:
                 results = raw_output.get("results", [])
                 sources = [
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                    }
+                    {"title": r.get("title", ""), "url": r.get("url", "")}
                     for r in results
                     if isinstance(r, dict) and r.get("url")
                 ]
                 tool_output = " ".join(
-                    r.get("content", "")
-                    for r in results
-                    if isinstance(r, dict)
+                    r.get("content", "") for r in results if isinstance(r, dict)
                 )
             elif isinstance(raw_output, list):
                 sources = [
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                    }
+                    {"title": r.get("title", ""), "url": r.get("url", "")}
                     for r in raw_output
                     if isinstance(r, dict) and r.get("url")
                 ]
                 tool_output = " ".join(
-                    r.get("content", "")
-                    for r in raw_output
-                    if isinstance(r, dict)
+                    r.get("content", "") for r in raw_output if isinstance(r, dict)
                 )
             else:
                 tool_output = str(raw_output)
@@ -111,70 +101,82 @@ def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
     return tool_output, sources
 
 
-async def build_ltm_context(db: AsyncSession) -> str:
-    """Load all LTM profile entries from DB and return as formatted string."""
-    entries = await get_profile(db)
+async def build_ltm_context(db: AsyncSession, user_id: str) -> str:
+    """Load LTM profile entries for this user and return as formatted string."""
+    entries = await get_profile(db, user_id)
     if not entries:
         return ""
     lines = [f"{e.key}: {e.value}" for e in entries]
     return "\n".join(lines)
 
 
-async def build_doc_context(db: AsyncSession) -> str:
+async def build_doc_context(db: AsyncSession, user_id: str) -> str:
     """
-    Load all uploaded document names from DB and return as system context string.
-    Grounds the agent's document_search decisions in actual upload state —
-    not pure phrasing inference. Same pattern as build_ltm_context.
+    Load uploaded document names for this user.
+    Grounds agent's document_search decisions in actual upload state.
     """
-    result = await db.execute(select(Document.filename))
+    result = await db.execute(
+        select(Document.filename).where(Document.user_id == user_id)
+    )
     filenames = [row[0] for row in result.fetchall()]
 
     if not filenames:
         return "[System: User has no documents uploaded. Do not call document_search.]"
 
     names = ", ".join(filenames)
-    return f"[System: User has {len(filenames)} document(s) uploaded: {names}. Only call document_search when the user is asking about content from these documents.]"
+    return (
+        f"[System: User has {len(filenames)} document(s) uploaded: {names}. "
+        f"Only call document_search when the user is asking about content from these documents.]"
+    )
 
 
 async def generate_title(message: str) -> str:
-    """Generate a short 4-5 word title for a conversation. Falls back to 'New Chat' on failure."""
     try:
         prompt = (
             f"Generate a short 4-5 word title for a conversation "
             f"that starts with this message: '{message}'. "
             f"Return ONLY the title, nothing else. No quotes, no punctuation at end."
         )
-        response = await _title_llm.ainvoke(prompt)
-        return response.content.strip()
+        response = await _get_title_llm().ainvoke(prompt)
+        # Gemini 3.x returns content as a list of parts — extract text safely
+        raw = response.content
+        if isinstance(raw, list):
+            title = " ".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in raw
+            ).strip()
+        else:
+            title = str(raw).strip()
+        return title or "New Chat"
     except Exception as e:
         logger.warning(f"Title generation failed: {str(e)}")
         return "New Chat"
 
 
-#streaming function ==> yields chunks one by one
 async def stream_agent_response(
     thread_id: str,
     message: str,
     db: AsyncSession,
+    user_id: str,
 ) -> AsyncGenerator[str, None]:
 
     try:
         db_path = get_db_path()
-        ltm_context = await build_ltm_context(db)
-        doc_context = await build_doc_context(db)  # grounding agent in actual document state
+        ltm_context = await build_ltm_context(db, user_id)
+        doc_context = await build_doc_context(db, user_id)
 
         config = {
             "configurable": {"thread_id": thread_id},
-            "recursion_limit": 10,  # prevent infinite ReAct loops — 5 tool calls max
+            "recursion_limit": 10,
         }
         input_state = {
             "messages": [HumanMessage(content=message)],
             "ltm_context": ltm_context,
-            "doc_context": doc_context,  # injected alongside ltm_context
+            "doc_context": doc_context,
         }
 
         async with get_checkpointer_context(db_path) as checkpointer:
-            graph_with_memory = get_graph_with_checkpointer(checkpointer)
+            graph_with_memory = get_graph_with_checkpointer(checkpointer, user_id)
             async for event in graph_with_memory.astream_events(
                 input_state,
                 config=config,
@@ -188,10 +190,7 @@ async def stream_agent_response(
                     if chunk and hasattr(chunk, "content") and chunk.content:
                         text = extract_text_content(chunk.content)
                         if text.strip():
-                            yield format_sse({
-                                "type": "text",
-                                "content": text,
-                            })
+                            yield format_sse({"type": "text", "content": text})
 
                 elif event_name == "on_tool_start":
                     tool_name = event.get("name", "")
@@ -217,21 +216,18 @@ async def stream_agent_response(
             if state and state.values.get("messages"):
                 async with AsyncSessionLocal() as fresh_db:
                     try:
-                        saved_keys = await memory_writer_node(state.values, fresh_db)
+                        saved_keys = await memory_writer_node(state.values, fresh_db, user_id)
                         await fresh_db.commit()
                         if saved_keys:
-                            yield format_sse({
-                                "type": "memory_update",
-                                "keys": saved_keys,
-                            })
+                            yield format_sse({"type": "memory_update", "keys": saved_keys})
                     except Exception as e:
                         await fresh_db.rollback()
-                        logger.error(f"Memory writer failed: {str(e)}")
+                        logger.error(f"Memory writer failed for user {user_id}: {str(e)}")
 
         yield format_sse({"type": "done"})
 
     except Exception as e:
-        logger.error(f"Stream error: {str(e)}", exc_info=True)
+        logger.error(f"Stream error for user {user_id}: {str(e)}", exc_info=True)
         yield format_sse({"type": "error", "message": "Something went wrong. Please try again."})
 
 

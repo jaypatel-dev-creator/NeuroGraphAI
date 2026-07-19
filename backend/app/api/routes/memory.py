@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_current_user
+from app.db.models import User
 from app.core.exceptions import ProfileEntryNotFoundException
 from app.memory.ltm_store import (
     get_profile,
@@ -12,55 +13,57 @@ from app.memory.ltm_store import (
 )
 from app.schemas.memory import ProfileRead, ProfileEntry, ProfileUpsert, ProfileEntryUpdate
 
-
 router = APIRouter()
 
 
-
-#get all entries
 @router.get("/profile", response_model=ProfileRead)
-async def read_profile(db: AsyncSession = Depends(get_db)):
-    entries = await get_profile(db)
+async def read_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    entries = await get_profile(db, current_user.id)
     return ProfileRead(
         entries=[ProfileEntry.model_validate(e) for e in entries]
     )
 
 
-#upsert
 @router.put("/profile", response_model=ProfileEntry)
 async def upsert_profile(
     payload: ProfileUpsert,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    entry = await upsert_profile_entry(db, payload.key, payload.value)
+    entry = await upsert_profile_entry(db, current_user.id, payload.key, payload.value)
     return ProfileEntry.model_validate(entry)
 
 
-#update entry by key
 @router.patch("/profile/{key}", response_model=ProfileEntry)
 async def update_profile_entry_route(
     key: str,
     payload: ProfileEntryUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    entry = await update_profile_entry(db, key, payload.value)
+    entry = await update_profile_entry(db, current_user.id, key, payload.value)
     if not entry:
         raise ProfileEntryNotFoundException(key)
     return ProfileEntry.model_validate(entry)
 
 
-#delete specific entry by key
 @router.delete("/profile/{key}", status_code=204)
 async def delete_single_profile_entry(
     key: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    deleted = await delete_profile_entry(db, key)
+    deleted = await delete_profile_entry(db, current_user.id, key)
     if not deleted:
         raise ProfileEntryNotFoundException(key)
 
 
-#delete all entries
 @router.delete("/profile", status_code=204)
-async def clear_profile(db: AsyncSession = Depends(get_db)):
-    await delete_profile(db)
+async def clear_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await delete_profile(db, current_user.id)

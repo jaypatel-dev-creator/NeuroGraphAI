@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, UploadFile, File
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from app.api.deps import get_db
+from fastapi import APIRouter, Depends, UploadFile, File
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_db, get_current_user
+from app.db.models import User
 from app.core.exceptions import DocumentNotFoundException
 from app.services.document_service import (
     ingest_and_persist,
@@ -15,12 +17,11 @@ from app.schemas.document import DocumentRead, DocumentUploadResponse
 router = APIRouter()
 
 
-
-# Upload one or more documents
 @router.post("/upload", response_model=List[DocumentUploadResponse])
 async def upload_documents(
     files: List[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     results = []
 
@@ -29,6 +30,7 @@ async def upload_documents(
 
         result = await ingest_and_persist(
             db=db,
+            user_id=current_user.id,
             content=content,
             filename=file.filename,
             content_type=file.content_type,
@@ -50,21 +52,23 @@ async def upload_documents(
     return results
 
 
-# List all uploaded documents
 @router.get("/", response_model=List[DocumentRead])
-async def list_documents_route(db: AsyncSession = Depends(get_db)):
-    docs = await list_documents(db)
+async def list_documents_route(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    docs = await list_documents(db, current_user.id)
     return [DocumentRead.model_validate(d) for d in docs]
 
 
-# Delete a document by sha256 — hard delete from vector store + DB
 @router.delete("/{sha256}", status_code=204)
 async def delete_document_route(
     sha256: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    doc = await get_document_by_sha256(db, sha256)
+    doc = await get_document_by_sha256(db, current_user.id, sha256)
     if not doc:
         raise DocumentNotFoundException(sha256)
 
-    await delete_document(db, sha256)
+    await delete_document(db, current_user.id, sha256)

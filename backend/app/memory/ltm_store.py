@@ -14,43 +14,46 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-#getting all entries
-async def get_profile(db: AsyncSession) -> list[UserProfile]:
+async def get_profile(db: AsyncSession, user_id: str) -> list[UserProfile]:
     try:
-        result = await db.execute(select(UserProfile).order_by(UserProfile.key))
+        result = await db.execute(
+            select(UserProfile)
+            .where(UserProfile.user_id == user_id)
+            .order_by(UserProfile.key)
+        )
         return list(result.scalars().all())
     except Exception as e:
         raise LTMException(f"Failed to fetch LTM profile: {str(e)}")
 
 
-#upsert based on environment
 async def upsert_profile_entry(
     db: AsyncSession,
+    user_id: str,
     key: str,
     value: str,
 ) -> UserProfile:
     settings = get_settings()
-    now = utcnow()  # single timestamp for consistency
+    now = utcnow()
 
     try:
         if settings.database_url:
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             stmt = (
                 pg_insert(UserProfile)
-                .values(key=key, value=value, updated_at=now)
+                .values(user_id=user_id, key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
-                    index_elements=["key"],
-                    set_={"value": value, "updated_at": now},  # explicitly update timestamp
+                    index_elements=["user_id", "key"],  # composite PK — was ["key"]
+                    set_={"value": value, "updated_at": now},
                 )
             )
         else:
             from sqlalchemy.dialects.sqlite import insert as sqlite_insert
             stmt = (
                 sqlite_insert(UserProfile)
-                .values(key=key, value=value, updated_at=now)
+                .values(user_id=user_id, key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
-                    index_elements=["key"],
-                    set_={"value": value, "updated_at": now},  # explicitly update timestamp
+                    index_elements=["user_id", "key"],  # composite PK — was ["key"]
+                    set_={"value": value, "updated_at": now},
                 )
             )
 
@@ -58,10 +61,13 @@ async def upsert_profile_entry(
         await db.flush()
 
         result = await db.execute(
-            select(UserProfile).where(UserProfile.key == key)
+            select(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.key == key,
+            )
         )
         entry = result.scalar_one()
-        logger.info(f"LTM upsert — key: {key}")
+        logger.info(f"LTM upsert — user: {user_id} key: {key}")
         return entry
     except LTMException:
         raise
@@ -69,30 +75,36 @@ async def upsert_profile_entry(
         raise LTMException(f"Failed to upsert LTM entry '{key}': {str(e)}")
 
 
-#deleting all entries
-async def delete_profile(db: AsyncSession) -> None:
+async def delete_profile(db: AsyncSession, user_id: str) -> None:
     try:
-        await db.execute(delete(UserProfile))
+        await db.execute(delete(UserProfile).where(UserProfile.user_id == user_id))
         await db.flush()
-        logger.info("LTM profile cleared.")
+        logger.info(f"LTM profile cleared — user: {user_id}")
     except Exception as e:
         raise LTMException(f"Failed to clear LTM profile: {str(e)}")
 
 
-#deleting specific entry
-async def delete_profile_entry(db: AsyncSession, key: str) -> bool:
+async def delete_profile_entry(db: AsyncSession, user_id: str, key: str) -> bool:
     try:
         result = await db.execute(
-            select(UserProfile).where(UserProfile.key == key)
+            select(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.key == key,
+            )
         )
         entry = result.scalar_one_or_none()
 
         if not entry:
             return False
 
-        await db.execute(delete(UserProfile).where(UserProfile.key == key))
+        await db.execute(
+            delete(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.key == key,
+            )
+        )
         await db.flush()
-        logger.info(f"LTM entry deleted — key: {key}")
+        logger.info(f"LTM entry deleted — user: {user_id} key: {key}")
         return True
     except LTMException:
         raise
@@ -100,17 +112,26 @@ async def delete_profile_entry(db: AsyncSession, key: str) -> bool:
         raise LTMException(f"Failed to delete LTM entry '{key}': {str(e)}")
 
 
-#updating specific entry
-async def update_profile_entry(db: AsyncSession, key: str, value: str) -> UserProfile | None:
+async def update_profile_entry(
+    db: AsyncSession,
+    user_id: str,
+    key: str,
+    value: str,
+) -> UserProfile | None:
     try:
-        result = await db.execute(select(UserProfile).where(UserProfile.key == key))
+        result = await db.execute(
+            select(UserProfile).where(
+                UserProfile.user_id == user_id,
+                UserProfile.key == key,
+            )
+        )
         entry = result.scalar_one_or_none()
 
         if not entry:
             return None
 
         entry.value = value
-        entry.updated_at = utcnow()  # explicitly set on ORM update too for consistency
+        entry.updated_at = utcnow()
         await db.flush()
         return entry
     except LTMException:

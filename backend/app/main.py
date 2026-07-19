@@ -10,11 +10,12 @@ from app.core.logging import setup_logging, get_logger
 from app.core.exceptions import (
     NeuroGraphException,
     neurograph_exception_handler,
-    generic_exception_handler,)
+    generic_exception_handler,
+)
 
-from app.api.routes import chat, threads, memory, health
-from app.api.routes import documents
-from app.db.base import engine, Base
+from app.api.routes import chat, threads, memory, health, documents
+from app.api.routes import auth
+from app.db.base import engine
 from app.db import models  # noqa: F401
 
 from app.agent.graph import compile_graph
@@ -23,10 +24,10 @@ from app.rag.store import init_store
 logger = get_logger(__name__)
 
 
-@asynccontextmanager #creates lifespan function to asynchronous context manager 
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
-    settings = get_settings() 
+    settings = get_settings()
 
     setup_logging(settings.app_env)
     logger.info("Starting NeuroGraph AI...")
@@ -42,20 +43,17 @@ async def lifespan(app: FastAPI):
     os.environ["TAVILY_API_KEY"] = settings.tavily_api_key
     logger.info("Tavily API key set.")
 
-
     # Data directories
-    if not settings.database_url: #for local, create neurograph.db file and checkpoints.db file
+    if not settings.database_url:
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
         Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"SQLite mode — db: {settings.sqlite_db_path}")
         logger.info(f"Checkpoint db: {settings.checkpoint_db_path}")
-    else: #for prod, no need to create db files 
+    else:
         logger.info("Postgres mode — using DATABASE_URL")
 
-    # DB table creation
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables verified.")
+    # Schema is managed by Alembic — run `alembic upgrade head` before starting.
+    logger.info("Schema managed by Alembic migrations.")
 
     # Agent graph compilation
     compile_graph()
@@ -91,10 +89,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-#binding exception handlers 
+    # Exception handlers
     app.add_exception_handler(NeuroGraphException, neurograph_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-#binding routers 
+
+    # Routers — auth first, then protected routes
+    app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])
     app.include_router(memory.router, prefix="/memory", tags=["Memory"])

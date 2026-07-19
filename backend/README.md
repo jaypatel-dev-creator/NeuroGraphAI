@@ -67,19 +67,20 @@ Tools registered in agent:
 ---
 
 
-
 ## Project Structure
+
 ```
 backend/
 ├── app/
 │   ├── api/
-│   │   ├── deps.py                  # Dependency injection
+│   │   ├── deps.py                  # Dependency injection — get_db, get_current_user
 │   │   └── routes/
+│   │       ├── auth.py              # POST /auth/register, POST /auth/login
 │   │       ├── chat.py              # POST /chat/stream, GET /chat/history/{id}
 │   │       ├── threads.py           # CRUD /threads
 │   │       ├── memory.py            # CRUD /memory/profile
 │   │       ├── documents.py         # POST /documents/upload, GET /documents/, DELETE /documents/{sha256}
-│   │       └── health.py            # GET /health
+│   │       └── health.py            # GET /health — DB liveness check
 │   ├── agent/
 │   │   ├── graph.py                 # LangGraph graph definition
 │   │   ├── state.py                 # AgentState TypedDict
@@ -93,32 +94,40 @@ backend/
 │   │       ├── weather.py
 │   │       ├── finance.py           # yFinance
 │   │       ├── datetime_tool.py
-│   │       └── document_search.py   # RAG tool — searches user-uploaded documents
+│   │       └── document_search.py   # RAG tool — per-request factory, user_id baked into closure
 │   ├── core/
 │   │   ├── config.py                # Pydantic Settings
 │   │   ├── exceptions.py            # Custom exception hierarchy
+│   │   ├── security.py              # bcrypt password hashing, JWT sign/verify
 │   │   └── logging.py               # Structured logging
 │   ├── db/
 │   │   ├── base.py                  # SQLAlchemy engine + session factory
-│   │   └── models.py                # Thread, UserProfile, Document ORM models
+│   │   └── models.py                # User, Thread, UserProfile, Document ORM models
 │   ├── memory/
 │   │   ├── checkpointer.py          # STM checkpointer config
 │   │   └── ltm_store.py             # LTM CRUD operations (repository layer)
 │   ├── rag/
-│   │   ├── init.py
+│   │   ├── __init__.py
 │   │   ├── store.py                 # Vector store singleton — ChromaDB/Pinecone switching
 │   │   └── ingestor.py              # File validation, text extraction, chunking, embedding
 │   ├── schemas/
+│   │   ├── auth.py                  # RegisterRequest, LoginRequest, TokenResponse, UserRead
 │   │   ├── chat.py
 │   │   ├── thread.py
 │   │   ├── memory.py
 │   │   └── document.py              # DocumentRead, DocumentUploadResponse
 │   ├── services/
+│   │   ├── auth_service.py          # Register, login — bcrypt + JWT
 │   │   ├── chat_service.py          # Chat business logic — streaming, SSE, LangGraph orchestration
 │   │   ├── thread_service.py        # Thread CRUD service layer
 │   │   └── document_service.py      # Document ingest, list, delete service layer
 │   └── main.py                      # App factory + lifespan
+├── alembic/                         # Schema migration files
+│   ├── env.py
+│   └── versions/
+│       └── 0001_initial_auth.py     # Initial schema — users, threads, documents, user_profile
 ├── data/                            # SQLite + ChromaDB files (local dev, gitignored)
+├── alembic.ini
 ├── .env                             # Local secrets (gitignored)
 ├── .env.example                     # Environment variable reference
 └── requirements.txt
@@ -207,7 +216,7 @@ The `init_store()` function runs once at startup in the FastAPI lifespan. Both b
 | Max chunks per document | 50 | Controls embedding API calls — applies to both PDF and TXT |
 | PDF type | Text-based only | PyMuPDF extracts digital text layer — scanned/image PDFs rejected |
 | Similarity threshold | 0.5 cosine similarity | Chunks below threshold discarded at retrieval |
-| User isolation | Global store | Per-user scoping planned after auth is added |
+| User isolation | Per-user — chunks namespaced by `user_id` in metadata, all queries and deletes filtered at vector store level | Auth + per-user scoping implemented |
 
 ---
 
@@ -255,16 +264,17 @@ Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), th
 ## Exception Handling
 
 A typed exception hierarchy ensures every error surfaces with the correct HTTP status code and a meaningful message — nothing leaks raw stack traces to the client.
-```
 NeuroGraphException (base)
-├── AgentException               → 500 — graph not initialized
-├── ThreadNotFoundException      → 404 — thread lookup failed
-├── ThreadServiceException       → 500 — unexpected thread DB error
+├── AgentException                → 500 — graph not initialized
+├── ThreadNotFoundException       → 404 — thread lookup failed
+├── ThreadServiceException        → 500 — unexpected thread DB error
 ├── ProfileEntryNotFoundException → 404 — LTM key not found
-├── LTMException                 → 500 — unexpected LTM DB error
-├── RAGException                 → 500 / 422 — ingest validation or unexpected RAG error
-└── DocumentNotFoundException    → 404 — document sha256 not found
-```
+├── LTMException                  → 500 — unexpected LTM DB error
+├── RAGException                  → 500 / 422 — ingest validation or unexpected RAG error
+├── DocumentNotFoundException     → 404 — document sha256 not found
+├── UnauthorizedException         → 401 — missing or invalid JWT
+├── ForbiddenException            → 403 — authenticated but not authorized (wrong owner)
+└── UserAlreadyExistsException    → 409 — email already registered
 **Route layer** raises specific 404-type exceptions for expected business logic failures.
 **Service layer** wraps unexpected errors in typed 500-type exceptions.
 **Global handler** catches all `NeuroGraphException` subclasses — logs warnings for 4xx, errors with stack traces for 5xx.
@@ -282,7 +292,7 @@ Routes are kept thin — request validation, existence checks, and response seri
 | Thread service | `services/thread_service.py` | Thread CRUD operations |
 | Document service | `services/document_service.py` | Document ingest pipeline, list, delete |
 | LTM repository | `memory/ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
-
+| Auth service | `services/auth_service.py` | User registration, login — bcrypt hashing, JWT issuance |
 ---
 
 ## API Reference
@@ -333,14 +343,20 @@ Routes are kept thin — request validation, existence checks, and response seri
 | GET | `/documents/` | List all uploaded documents with metadata |
 | DELETE | `/documents/{sha256}` | Hard delete — removes from vector store and documents table |
 
+
 ### Health
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/health` | Service health check |
+| GET | `/health` | Liveness check — returns 200 with DB status when healthy, 503 when DB is unreachable |
 
+### Auth
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/register` | Register a new user — returns JWT on success, 409 if email already exists |
+| POST | `/auth/login` | Authenticate an existing user — returns JWT on success, 401 on invalid credentials |
 ---
-
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in your values.
@@ -375,10 +391,14 @@ CHECKPOINT_DB_PATH=./data/checkpoints.db
 CHROMA_PATH=./data/chroma
 PINECONE_API_KEY=
 PINECONE_INDEX_NAME=neurograph-rag
+
+# Auth
+JWT_SECRET_KEY=        # generate with: openssl rand -hex 32
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=10080
 ```
 
 ---
-
 ## Local Development
 
 **Prerequisites:** Python 3.11+, pip
@@ -398,24 +418,26 @@ pip install -r requirements.txt
 cp .env.example .env
 # Fill in your API keys in .env
 
-# 5. Run the server
+# 5. Run database migrations
+alembic upgrade head
+
+# 6. Run the server
 uvicorn app.main:app --reload --port 8000
 ```
 
 Swagger UI available at `http://localhost:8000/docs`
-
 ---
-
 ## Production Deployment (Render)
 
 1. Create a new Web Service on Render, connect your GitHub repo
 2. Set build command: `pip install -r requirements.txt`
-3. Set start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. Set start command: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 4. Add all environment variables from `.env.example` in the Render dashboard
 5. Set `DATABASE_URL` to your Supabase Postgres connection string
 6. Set `PINECONE_API_KEY` and `PINECONE_INDEX_NAME` for production RAG
 7. Set `APP_ENV=production`
 8. Set `FRONTEND_URL` to your Vercel deployment URL
+9. Set `JWT_SECRET_KEY` — generate with `openssl rand -hex 32`
 
 ---
 
@@ -426,21 +448,20 @@ All LLM calls, tool executions, and agent graph runs are traced automatically vi
 Traces are visible at `https://smith.langchain.com` under your configured project.
 
 ---
-
 ## Known Limitations and Planned Improvements
 
 | Area | Current State | Planned Improvement |
 |---|---|---|
-| Authentication | None — single-user, all endpoints public | JWT-based auth; per-user thread and document scoping |
-| Per-user RAG isolation | Global document store — all users share one vector collection | Add `user_id` metadata to chunks and filter at query time post-auth |
 | Tool history on reload | Tool badges visible during live streaming only — not reconstructed from checkpoints | Dedicated `chat_messages` table written at stream time |
 | PDF support | Text-based PDFs only — scanned/image PDFs rejected | OCR via `pytesseract` or cloud Vision API |
 | Chunking | Character-based recursive splitter (LangChain) | Semantic chunking or token-aware splitting |
 | RAG retrieval | Top-k=3, no reranking | Cross-encoder reranker (e.g. Cohere Rerank) for precision |
 | Similarity threshold | Fixed at 0.5 — not validated against real queries | Evaluate against a query set and tune, or make configurable via env var |
 | LTM retrieval | Full profile injected on every request | Semantic retrieval — top-k relevant profile entries per query |
-| Rate limiting | None | `slowapi` middleware |
+| LTM write mechanism | Regex-parsed from model output (`MEMORY_UPDATE: key=X value=Y`) — silent drop if Gemini reformats | Structured tool call or dedicated memory-write tool |
+| Rate limiting | None | `slowapi` middleware or API gateway |
 | Tests | None | `pytest` + `httpx.AsyncClient` |
-| Thread deletion | Thread record deleted, checkpoint records remain | Cascade delete STM checkpoint data on thread deletion |
-| Context management | Full message history sent to LLM | Trimming or summarization for very long conversations |
-| Schema migrations | `create_all` only — no migration history | Alembic (planned with auth phase) |
+| Thread deletion | Thread record deleted, checkpoint records remain in STM DB | Cascade delete STM checkpoint data on thread deletion |
+| Context management | Full message history sent to LLM on every turn | Trimming or summarization for very long conversations |
+| Password security | Minimum 8 characters only — no complexity requirement | Enforce uppercase, digit, special character rules |
+| JWT storage | `localStorage` — XSS-vulnerable | `httpOnly` cookie with CSRF protection |

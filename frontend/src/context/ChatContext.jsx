@@ -25,15 +25,17 @@ export function ChatProvider({ children }) {
   const [memoryNotification, setMemoryNotification] = useState(null)
 
   // --- RAG document state ---
-  const [documents, setDocuments] = useState([])           // list of uploaded docs from DB
-  const [showDocuments, setShowDocuments] = useState(false) // toggle docs panel in sidebar
-  const [uploadStatuses, setUploadStatuses] = useState([])  // per-file upload feedback
+  const [documents, setDocuments] = useState([])
+  const [showDocuments, setShowDocuments] = useState(false)
+  const [uploadStatuses, setUploadStatuses] = useState([])
 
   const doneCommittedRef = useRef(false)
   const showProfileRef = useRef(false)
   const memoryTimerRef = useRef(null)
+  const activeThreadIdRef = useRef(null)  // fix: ref to avoid stale closure in handleSSEEvent
 
   showProfileRef.current = showProfile
+  activeThreadIdRef.current = activeThreadId  // always current, no closure staleness
 
   // --- Thread actions ---
 
@@ -111,9 +113,14 @@ export function ChatProvider({ children }) {
     })
 
     try {
+      // fetch() bypasses the axios interceptor — inject token manually
+      const token = localStorage.getItem('auth_token')
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ thread_id: activeThreadId, message }),
       })
 
@@ -223,7 +230,7 @@ export function ChatProvider({ children }) {
           return null
         })
         setIsStreaming(false)
-        refreshThreadTitle(activeThreadId)
+        refreshThreadTitle(activeThreadIdRef.current)  // fix: use ref, not stale closure value
 
         if (showProfileRef.current) {
           loadProfile()
@@ -244,7 +251,7 @@ export function ChatProvider({ children }) {
       default:
         break
     }
-  }, [activeThreadId])
+  }, [])
 
   const refreshThreadTitle = useCallback(async (threadId) => {
     if (!threadId) return
@@ -312,8 +319,6 @@ export function ChatProvider({ children }) {
     setUploadStatuses(initial)
 
     try {
-      // Content-Type set to undefined — forces axios to drop the default
-      // application/json header and auto-set multipart/form-data with correct boundary
       const res = await client.post('/documents/upload', formData, {
         headers: { 'Content-Type': undefined },
       })

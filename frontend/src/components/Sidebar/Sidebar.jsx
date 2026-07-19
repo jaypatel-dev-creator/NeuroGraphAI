@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useChat } from "../../context/ChatContext";
+import { useAuth } from "../../context/AuthContext";
 import ThreadList from "./ThreadList";
 import DocumentList from "../Documents/DocumentList";
 
@@ -12,6 +13,7 @@ export default function Sidebar() {
     showDocuments,
     handleToggleDocuments,
   } = useChat();
+  const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const handleNewChat = async () => {
@@ -35,11 +37,11 @@ export default function Sidebar() {
       >
         {!collapsed && (
           <div className="flex items-center gap-2">
-  <img src="/favicon.svg" alt="logo" className="w-5 h-5 flex-shrink-0" />
-  <h1 className="text-base font-semibold text-gray-800 tracking-tight truncate">
-    NeuroGraph AI
-  </h1>
-</div>
+            <img src="/favicon.svg" alt="logo" className="w-5 h-5 flex-shrink-0" />
+            <h1 className="text-base font-semibold text-gray-800 tracking-tight truncate">
+              NeuroGraph AI
+            </h1>
+          </div>
         )}
         <button
           onClick={() => setCollapsed((prev) => !prev)}
@@ -124,6 +126,34 @@ export default function Sidebar() {
         >
           <span className="flex-shrink-0">🧠</span>
           {!collapsed && "Memory Profile"}
+        </button>
+      </div>
+
+      {/* Logout */}
+      <div className="p-3 border-t border-gray-100">
+        <button
+          onClick={logout}
+          title="Sign out"
+          className={`w-full flex items-center gap-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-200 hover:text-red-500 transition-colors ${
+            collapsed ? "justify-center px-0 py-2" : "px-3 py-2"
+          }`}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="flex-shrink-0"
+          >
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          {!collapsed && "Sign out"}
         </button>
       </div>
     </aside>

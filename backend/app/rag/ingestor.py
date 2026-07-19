@@ -12,26 +12,31 @@ from app.rag.store import get_store
 
 logger = get_logger(__name__)
 
-#constants
+# Constants
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_PDF_PAGES = 50
-MAX_CHUNKS = 50          # max chunks per document — controls embedding API calls
+MAX_CHUNKS = 50
 SUPPORTED_TYPES = {"application/pdf", "text/plain"}
 
-CHUNK_SIZE = 1000        # characters per chunk
-CHUNK_OVERLAP = 200      # overlap between consecutive chunks
-TOP_K = 3                # returned by document_search tool
-SIMILARITY_THRESHOLD = 0.5  # minimum cosine similarity for a chunk to be returned
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
+TOP_K = 3
+SIMILARITY_THRESHOLD = 0.5
 
-#gemini client singleton
-
-def _build_genai_client() -> genai.Client:
-    return genai.Client(api_key=get_settings().google_api_key)
-
-_genai_client = _build_genai_client()
+# Lazily initialized on first embed call — not at import time.
+# Module-level init fires before lifespan setup and before .env is validated,
+# causing opaque crashes if google_api_key is missing.
+_genai_client: genai.Client | None = None
 
 
-#text splitter singleton
+def _get_genai_client() -> genai.Client:
+    global _genai_client
+    if _genai_client is None:
+        _genai_client = genai.Client(api_key=get_settings().google_api_key)
+    return _genai_client
+
+
+# Text splitter — safe to initialize at module level (no config dependency)
 _splitter = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE,
     chunk_overlap=CHUNK_OVERLAP,
@@ -44,7 +49,6 @@ class IngestResult:
         self.sha256 = sha256
         self.chunk_count = chunk_count
         self.already_existed = already_existed
-
 
 
 def compute_sha256(content: bytes) -> str:
@@ -85,11 +89,10 @@ def extract_text_from_txt(content: bytes, filename: str) -> str:
             raise RAGException(f"Failed to decode '{filename}': {str(e)}", status_code=422)
 
 
-
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    result = _genai_client.models.embed_content(
+    result = _get_genai_client().models.embed_content(
         model="gemini-embedding-001",
-        contents=texts,  # full list — one API call for all chunks
+        contents=texts,
         config=types.EmbedContentConfig(
             task_type="RETRIEVAL_DOCUMENT",
             output_dimensionality=768,
@@ -99,7 +102,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(text: str) -> list[float]:
-    result = _genai_client.models.embed_content(
+    result = _get_genai_client().models.embed_content(
         model="gemini-embedding-001",
         contents=text,
         config=types.EmbedContentConfig(
@@ -110,7 +113,12 @@ def embed_query(text: str) -> list[float]:
     return result.embeddings[0].values
 
 
-async def ingest_file(content: bytes, filename: str, content_type: str) -> IngestResult:
+async def ingest_file(
+    content: bytes,
+    filename: str,
+    content_type: str,
+    user_id: str,           # scopes dedup check and chunk metadata to this user
+) -> IngestResult:
     # 1. Validate size and type
     if len(content) > MAX_FILE_SIZE_BYTES:
         raise RAGException(
@@ -124,12 +132,12 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
             status_code=422,
         )
 
-    # 2. SHA256 dedup
+    # 2. SHA256 dedup — per-user: same file uploaded by two users ingests independently
     sha256 = compute_sha256(content)
     store = get_store()
 
-    if store.has_sha256(sha256):
-        logger.info(f"Duplicate detected — skipping ingest: {filename} ({sha256[:8]}...)")
+    if store.has_sha256(sha256, user_id=user_id):
+        logger.info(f"Duplicate detected for user {user_id} — skipping: {filename} ({sha256[:8]}...)")
         return IngestResult(
             filename=filename,
             sha256=sha256,
@@ -143,13 +151,11 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
     else:
         text = extract_text_from_txt(content, filename)
 
-    # 4. Chunk — LangChain RecursiveCharacterTextSplitter
+    # 4. Chunk
     chunks = _splitter.split_text(text)
     if not chunks:
         raise RAGException(f"'{filename}' produced no text chunks after processing.", status_code=422)
 
-    # 5. Validate chunk count — enforced for both PDF and TXT
-    # Controls max embedding API calls and vector store size per document
     if len(chunks) > MAX_CHUNKS:
         raise RAGException(
             f"'{filename}' produced {len(chunks)} chunks — max allowed is {MAX_CHUNKS}. "
@@ -157,15 +163,20 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
             status_code=422,
         )
 
-    logger.info(f"Chunked '{filename}' into {len(chunks)} chunks")
+    logger.info(f"Chunked '{filename}' into {len(chunks)} chunks — user: {user_id}")
 
-    # 6. Embed — batch call, offloaded to thread pool to avoid blocking the async event loop
+    # 5. Embed — offloaded to thread pool to avoid blocking the async event loop
     embeddings = await asyncio.to_thread(embed_texts, chunks)
 
-    # 7. Write to store
-    chunk_ids = [f"{sha256}_{i}" for i in range(len(chunks))]
+    # 6. Write to store — user_id in metadata enables per-user filtering at query time
+    chunk_ids = [f"{user_id}_{sha256}_{i}" for i in range(len(chunks))]
     metadatas = [
-        {"sha256": sha256, "filename": filename, "chunk_index": i}
+        {
+            "sha256": sha256,
+            "filename": filename,
+            "chunk_index": i,
+            "user_id": user_id,     # critical — enables where filter in store.query()
+        }
         for i in range(len(chunks))
     ]
 
@@ -176,7 +187,7 @@ async def ingest_file(content: bytes, filename: str, content_type: str) -> Inges
         metadatas=metadatas,
     )
 
-    logger.info(f"Indexed '{filename}' — {len(chunks)} chunks written to vector store")
+    logger.info(f"Indexed '{filename}' — {len(chunks)} chunks written — user: {user_id}")
 
     return IngestResult(
         filename=filename,
