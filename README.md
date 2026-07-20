@@ -1,7 +1,7 @@
 # NeuroGraph AI
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.135+-009688?logo=fastapi&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136+-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![LangChain](https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C?logo=langchain&logoColor=white)
@@ -10,6 +10,11 @@
 ![Gemini](https://img.shields.io/badge/Gemini-3.1_Flash_Lite-4285F4?logo=google&logoColor=white)
 
 A full-stack conversational AI agent with dual-layer memory and Dynamic Agentic RAG. Built on a manually constructed LangGraph ReAct graph — not a wrapper around prebuilt agent abstractions.
+
+**Live demo:** [neuro-graph-ai.vercel.app](https://neuro-graph-ai.vercel.app)  
+**Backend API:** [neurographai.onrender.com](https://neurographai.onrender.com)
+
+> ⚠️ Hosted on Render free tier — first request may take 30–60 seconds to cold start.
 
 ---
 
@@ -20,6 +25,7 @@ Most AI chat demos call an LLM and return a response. NeuroGraph AI is an agent 
 ---
 
 ## Architecture Overview
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    React Frontend                       │
@@ -46,30 +52,46 @@ Most AI chat demos call an LLM and return a response. NeuroGraph AI is an agent 
 │   Migrations: Alembic                                   │
 └─────────────────────────────────────────────────────────┘
 ```
+
 ---
 
 ## Key Features
 
-**JWT Authentication + per-user isolation**
+**JWT Authentication + per-user isolation**  
 Register/login with bcrypt-hashed passwords and stateless JWT tokens. Every thread, LTM profile entry, and uploaded document is scoped to the authenticated user — enforced at the service and vector store layer. Users cannot access each other's data.
 
-**Agentic RAG — not pipeline RAG**
+**Agentic RAG — not pipeline RAG**  
 Users upload PDF or TXT files at runtime. The agent calls `document_search` only when the user is asking about document content — not on every message. Retrieval is a tool call, not a forced injection.
 
-**Dual-layer memory**
+**Dual-layer memory**  
 Short-term memory (STM) via LangGraph checkpointing persists full conversation state per thread. Long-term memory (LTM) extracts and stores user facts across sessions — injected into the system prompt on every request.
 
-**Manual ReAct graph**
+**Manual ReAct graph**  
 Built with LangGraph's `StateGraph` directly — not `create_react_agent`. Enables custom post-graph hooks for LTM writing with request-scoped DB sessions.
 
-**Env-based store switching**
+**Env-based store switching**  
 ChromaDB locally, Pinecone in production. SQLite locally, Postgres (Supabase) in production. Switching is entirely config-driven — no code changes between environments.
 
-**Alembic migrations**
+**Alembic migrations**  
 Schema changes are versioned and reproducible across environments. The start command runs `alembic upgrade head` automatically on every deploy.
 
-**SSE streaming**
+**SSE streaming**  
 Responses stream token-by-token. Tool execution, memory updates, and errors are distinct SSE event types — the frontend renders each differently in real time.
+
+---
+
+## Tech Stack
+
+| Layer | Local | Production |
+|---|---|---|
+| LLM + Embeddings | Gemini 3.1 Flash Lite + gemini-embedding-001 | same |
+| Backend | FastAPI + LangGraph | Render |
+| Frontend | React + Vite | Vercel |
+| Database | SQLite + aiosqlite | Supabase Postgres |
+| Vector Store | ChromaDB | Pinecone |
+| Checkpointer | SQLite | Postgres (LangGraph) |
+| Auth | JWT + bcrypt | same |
+| Migrations | Alembic | same |
 
 ---
 
@@ -81,9 +103,9 @@ neurograph-ai/
 │   └── README.md     # Full backend documentation
 ├── frontend/         # React + Vite
 │   └── README.md     # Full frontend documentation
-├── docker-compose.yml
 └── README.md         # This file
 ```
+
 Backend and frontend each have their own README covering architecture, API reference, project structure, environment variables, and deployment.
 
 ---
@@ -94,8 +116,8 @@ Backend and frontend each have their own README covering architecture, API refer
 
 ```bash
 # Clone
-git clone https://github.com/your-username/neurograph-ai.git
-cd neurograph-ai
+git clone https://github.com/jaypatel-dev-creator/NeuroGraphAI.git
+cd NeuroGraphAI
 
 # Backend
 cd backend
@@ -127,4 +149,4 @@ Frontend: `http://localhost:5173`
 | `PINECONE_API_KEY` | Vector store (prod only) | Yes |
 
 Leave `PINECONE_API_KEY` empty locally — ChromaDB is used automatically.  
-Generate `JWT_SECRET_KEY` with: `openssl rand -hex 32`
+Generate `JWT_SECRET_KEY` with: `python -c "import secrets; print(secrets.token_hex(32))"`
