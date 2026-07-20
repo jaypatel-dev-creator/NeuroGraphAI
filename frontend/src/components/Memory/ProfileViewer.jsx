@@ -7,7 +7,10 @@ function formatKey(key) {
 }
 
 function formatRelativeTime(dateStr) {
-  const date = new Date(dateStr + 'Z')  // append 'Z' to treat as UTC — prevents local timezone offset
+  if (!dateStr) return ''
+  const normalized = dateStr.endsWith('Z') || dateStr.includes('+') ? dateStr : dateStr + 'Z'
+  const date = new Date(normalized)
+  if (isNaN(date.getTime())) return ''
   const now = new Date()
   const diffMs = now - date
   const diffMins = Math.floor(diffMs / 60000)
