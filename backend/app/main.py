@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     if settings.database_url:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         conn_string = settings.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
-        async with await AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
+        async with  AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
             await checkpointer.setup()
         logger.info("LangGraph postgres checkpointer tables ready.")
 
