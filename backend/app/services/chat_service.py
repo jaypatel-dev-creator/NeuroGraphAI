@@ -53,7 +53,8 @@ def get_checkpointer_context(db_path: str):
     if use_postgres_checkpointer():
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         settings = get_settings()
-        return AsyncPostgresSaver.from_conn_string(settings.database_url)
+        conn_string = settings.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+        return AsyncPostgresSaver.from_conn_string(conn_string)
     else:
         return AsyncSqliteSaver.from_conn_string(db_path)
 
