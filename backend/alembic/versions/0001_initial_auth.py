@@ -29,7 +29,7 @@ def upgrade() -> None:
     op.create_table(
         'threads',
         sa.Column('id', sa.String(), nullable=False),
-        sa.Column('user_id', sa.String(), nullable=True),
+        sa.Column('user_id', sa.String(), nullable=False),  # fixed: thread must always belong to a user
         sa.Column('title', sa.String(), nullable=True),
         sa.Column('is_titled', sa.Boolean(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),

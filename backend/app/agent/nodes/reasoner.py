@@ -9,17 +9,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-# used in graph.py in compile_graph() function to bind llm with tools
-def build_llm_with_tools(tools: list[BaseTool]) -> ChatGoogleGenerativeAI:
-    settings = get_settings()
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-flash-lite",
-        google_api_key=settings.google_api_key,
-        temperature=0.7,
-    )
-    return llm.bind_tools(tools)
-
-
 # Called every turn inside reasoner_node — builds fresh system prompt with updated LTM and doc context
 def build_system_prompt(tools: list[BaseTool], ltm_context: str, doc_context: str) -> str:
     tool_descriptions = "\n".join(

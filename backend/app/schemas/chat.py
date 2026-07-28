@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 
-
+#request schema for post/chat/stream
 class ChatRequest(BaseModel):
     thread_id: str
     message: str = Field(min_length=1, max_length=4000)
@@ -25,6 +25,10 @@ class ChatMessage(BaseModel):
     tool_call: Optional[ToolCall] = None
 
 
+#response for  get/chat/history/{thread_id}
+
 class ChatHistoryRead(BaseModel):
     thread_id: str
     messages: list[ChatMessage]
+
+

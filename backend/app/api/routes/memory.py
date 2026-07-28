@@ -26,7 +26,7 @@ async def read_profile(
         entries=[ProfileEntry.model_validate(e) for e in entries]
     )
 
-
+#not used 
 @router.put("/profile", response_model=ProfileEntry)
 async def upsert_profile(
     payload: ProfileUpsert,
@@ -36,7 +36,7 @@ async def upsert_profile(
     entry = await upsert_profile_entry(db, current_user.id, payload.key, payload.value)
     return ProfileEntry.model_validate(entry)
 
-
+#not used 
 @router.patch("/profile/{key}", response_model=ProfileEntry)
 async def update_profile_entry_route(
     key: str,

@@ -32,7 +32,7 @@ async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
 
 
 async def list_threads(db: AsyncSession, user_id: str) -> list[Thread]:
-    """Return all threads for this user, most recently updated first."""
+    """Return all threads scoped to the  user, most recently updated first."""
     try:
         result = await db.execute(
             select(Thread)

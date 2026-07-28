@@ -25,7 +25,7 @@ async def get_profile(db: AsyncSession, user_id: str) -> list[UserProfile]:
     except Exception as e:
         raise LTMException(f"Failed to fetch LTM profile: {str(e)}")
 
-
+#used by put route (memory router ) and memory_writer_node 
 async def upsert_profile_entry(
     db: AsyncSession,
     user_id: str,

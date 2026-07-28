@@ -1,26 +1,26 @@
 from logging.config import fileConfig
-import os
+from pathlib import Path
 import sys
 
 from sqlalchemy import create_engine, pool
 from alembic import context
 
-# Add backend/ to path so app imports work
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+# Backend path fix :  Add backend/ to  sys path so app imports work
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-# Build sync URL — Alembic is sync-only, never uses the async engine from base.py
+#creating sync driver database urls' cause alembic requires sync driver 
+#for production 
 if settings.database_url:
     sync_url = settings.database_url.replace(
-        "postgresql+asyncpg://", "postgresql+psycopg2://"
+        "postgresql+psycopg://", "postgresql+psycopg2://"
     ).replace(
         "postgres://", "postgresql+psycopg2://"
     )
-else:
-    # sqlite+aiosqlite → sqlite (sync driver, no aiosqlite needed)
+else:#local 
     sync_url = f"sqlite:///{settings.sqlite_db_path}"
 
 config = context.config
@@ -29,7 +29,7 @@ config.set_main_option("sqlalchemy.url", sync_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import models to expose Base.metadata — base.py's async engine is never used here
+# Import models to expose Base.metadata 
 from app.db.base import Base
 from app.db import models  # noqa: F401
 

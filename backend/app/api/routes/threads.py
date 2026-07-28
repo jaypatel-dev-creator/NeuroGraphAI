@@ -16,6 +16,7 @@ from app.services.thread_service import (
 router = APIRouter()
 
 
+
 @router.post("", response_model=ThreadRead, status_code=201)
 async def create_thread_route(
     payload: ThreadCreate,

@@ -13,12 +13,6 @@ logger = get_logger(__name__)
 
 
 async def register_user(db: AsyncSession, payload: RegisterRequest) -> TokenResponse:
-    """
-    Register a new user.
-    - Checks email uniqueness first (409 if taken).
-    - Hashes password with bcrypt.
-    - Returns a JWT so the client is immediately authenticated after registration.
-    """
     # Check email uniqueness
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none() is not None:
@@ -39,16 +33,8 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> TokenResp
 
 
 async def login_user(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
-    """
-    Authenticate an existing user.
-    - Deliberately returns the same error for wrong email and wrong password
-      to prevent user enumeration attacks.
-    - Returns a JWT on success.
-    """
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
-
-    # Same error for "user not found" and "wrong password" — no enumeration
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise UnauthorizedException("Invalid email or password.")
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class ThreadCreate(BaseModel):
-    title: str = "New Chat"
+    title: str = "New Chat" #optional cause either way ,in db first thread has default new chat title . 
 
 
 class ThreadRead(BaseModel):
@@ -18,4 +18,5 @@ class ThreadRead(BaseModel):
 
 class ThreadUpdate(BaseModel):
     title: str
+
     
