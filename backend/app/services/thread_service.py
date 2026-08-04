@@ -9,7 +9,7 @@ from app.core.exceptions import ThreadServiceException, ForbiddenException
 
 logger = get_logger(__name__)
 
-
+#post /threads 
 async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
     """Create a new thread scoped to user."""
     try:
@@ -20,9 +20,10 @@ async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
             title=title,
             is_titled=False,
         )
+
         db.add(thread)
         await db.flush()
-        await db.refresh(thread)
+        await db.refresh(thread) #so that auto generated field comes i.e created at and updated at 
         logger.info(f"Thread created: {thread_id} — user: {user_id}")
         return thread
     except ThreadServiceException:
@@ -30,7 +31,7 @@ async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
     except Exception as e:
         raise ThreadServiceException(f"Failed to create thread: {str(e)}")
 
-
+#get / threads 
 async def list_threads(db: AsyncSession, user_id: str) -> list[Thread]:
     """Return all threads scoped to the  user, most recently updated first."""
     try:
@@ -45,7 +46,7 @@ async def list_threads(db: AsyncSession, user_id: str) -> list[Thread]:
     except Exception as e:
         raise ThreadServiceException(f"Failed to list threads: {str(e)}")
 
-
+#get/threads/id
 async def get_thread_by_id(db: AsyncSession, user_id: str, thread_id: str) -> Thread | None:
     """
     Return a thread by ID, scoped to user.
@@ -71,9 +72,10 @@ async def get_thread_by_id(db: AsyncSession, user_id: str, thread_id: str) -> Th
     except Exception as e:
         raise ThreadServiceException(f"Failed to fetch thread '{thread_id}': {str(e)}")
 
+#patch/threads
 
 async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
-    """Rename a thread and mark it as titled. Ownership already verified by caller."""
+    """Rename a thread and mark it as titled."""
     try:
         thread.title = title
         thread.is_titled = True
@@ -86,9 +88,9 @@ async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
     except Exception as e:
         raise ThreadServiceException(f"Failed to rename thread '{thread.id}': {str(e)}")
 
-
+#delete/thread/id
 async def delete_thread(db: AsyncSession, thread_id: str) -> None:
-    """Delete a thread by ID. Ownership already verified by caller."""
+    """Delete a thread by ID. """
     try:
         await db.execute(delete(Thread).where(Thread.id == thread_id))
         await db.flush()

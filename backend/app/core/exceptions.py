@@ -6,14 +6,14 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-#Base class 
+#Base exception  class 
 class NeuroGraphException(Exception):
     def __init__(self, message: str, status_code: int = 500):
         self.message = message
         self.status_code = status_code
         super().__init__(message)
 
-#sub exceptions 
+#sub exceptions  classes 
 class AgentException(NeuroGraphException):
     pass
 

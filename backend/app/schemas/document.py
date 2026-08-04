@@ -1,7 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel
 
-
+#get all 
 class DocumentRead(BaseModel):
     sha256: str
     filename: str
@@ -11,7 +11,7 @@ class DocumentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-
+#post 
 class DocumentUploadResponse(BaseModel):
     filename: str
     sha256: str

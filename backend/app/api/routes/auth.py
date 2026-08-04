@@ -7,7 +7,7 @@ from app.services.auth_service import register_user, login_user
 
 router = APIRouter()
 
-
+#sign in 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(
     payload: RegisterRequest,
@@ -20,7 +20,7 @@ async def register(
     """
     return await register_user(db, payload)
 
-
+#log in 
 @router.post("/login", response_model=TokenResponse)
 async def login(
     payload: LoginRequest,

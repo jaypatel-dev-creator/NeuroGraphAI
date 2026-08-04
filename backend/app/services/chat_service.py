@@ -3,7 +3,7 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -19,9 +19,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Lazily initialized on first generate_title() call — not at import time.
-# Module-level init runs before lifespan setup and before .env is validated,
-# which causes opaque crashes if google_api_key is missing.
+#singleton
 _title_llm: ChatGoogleGenerativeAI | None = None
 
 
@@ -115,6 +113,8 @@ async def build_doc_context(db: AsyncSession, user_id: str) -> str:
     """
     Load uploaded document names for this user.
     Grounds agent's document_search decisions in actual upload state.
+    Filename hint enables topic-matching — LLM checks document first
+    even for general knowledge questions if topic matches filename.
     """
     result = await db.execute(
         select(Document.filename).where(Document.user_id == user_id)
@@ -127,9 +127,10 @@ async def build_doc_context(db: AsyncSession, user_id: str) -> str:
     names = ", ".join(filenames)
     return (
         f"[System: User has {len(filenames)} document(s) uploaded: {names}. "
-        f"Only call document_search when the user is asking about content from these documents.]"
+        f"If the user's question could relate to any of these document names or their topics, "
+        f"always call document_search BEFORE answering from general knowledge. "
+        f"Document content always takes priority over your own knowledge.]"
     )
-
 
 async def generate_title(message: str) -> str:
     try:
@@ -139,7 +140,6 @@ async def generate_title(message: str) -> str:
             f"Return ONLY the title, nothing else. No quotes, no punctuation at end."
         )
         response = await _get_title_llm().ainvoke(prompt)
-        # Gemini 3.x returns content as a list of parts — extract text safely
         raw = response.content
         if isinstance(raw, list):
             title = " ".join(

@@ -43,7 +43,7 @@ def get_tools(user_id: str) -> list[BaseTool]:
     """
     Build the full tool list for a specific request.
     Reuses module-level static tools — only document_search is built per-request
-    because it is a closure that captures user_id and cannot be shared across users.
+    because it is user scoped.
     """
     return _static_tools + [make_document_search_tool(user_id)]
 
@@ -51,7 +51,7 @@ def get_tools(user_id: str) -> list[BaseTool]:
 def get_tools_by_name(tools: list[BaseTool]) -> dict[str, BaseTool]:
     return {tool.name: tool for tool in tools}
 
-
+#routing function 
 def should_use_tool(state: AgentState) -> str:
     last_message = state["messages"][-1]
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
@@ -73,32 +73,24 @@ def compile_graph() -> None:
         temperature=0.7,
     )
 
-    #validation run only 
+    # Validation — confirms tools initialize cleanly and LLM accepts tool binding.
+    # bind_tools() is where broken tool schemas or bad API keys surface at startup.
     tools = get_tools("__startup__")
-    tools_by_name = get_tools_by_name(tools)
-    llm_with_tools = _base_llm.bind_tools(tools)
-   #creating graph structure 
-    builder = StateGraph(AgentState)
-    builder.add_node("reasoner", partial(reasoner_node, llm_with_tools=llm_with_tools, tools=tools))
-    builder.add_node("tool_executor", partial(tool_executor_node, tools_by_name=tools_by_name))
-    builder.set_entry_point("reasoner")
-    builder.add_conditional_edges("reasoner", should_use_tool, {"tool_executor": "tool_executor", "end": END})
-    builder.add_edge("tool_executor", "reasoner")#actual react loop created here 
-    # builder.compile() intentionally NOT called — no checkpointer available at startup
+    _base_llm.bind_tools(tools)
 
     _initialized = True
     logger.info("LangGraph ReAct graph builder ready.")
 
 
 def get_graph_with_checkpointer(checkpointer, user_id: str):
-  # safety gate — ensures compile_graph() ran successfully at startup
+    # Safety gate — ensures compile_graph() ran successfully at startup
     if not _initialized:
         raise AgentException("Graph not initialized. Call compile_graph() on startup.")
 
-    # Only document_search is built fresh — all other tools reused from _static_tools singleton 
+    # Only document_search is built fresh — all other tools reused from _static_tools singleton
     tools = get_tools(user_id)
     tools_by_name = get_tools_by_name(tools)
-#uses the same gemini client singleton
+    # Uses the same Gemini client singleton
     llm_with_tools = _base_llm.bind_tools(tools)
 
     graph = StateGraph(AgentState)
@@ -106,6 +98,6 @@ def get_graph_with_checkpointer(checkpointer, user_id: str):
     graph.add_node("tool_executor", partial(tool_executor_node, tools_by_name=tools_by_name))
     graph.set_entry_point("reasoner")
     graph.add_conditional_edges("reasoner", should_use_tool, {"tool_executor": "tool_executor", "end": END})
-    graph.add_edge("tool_executor", "reasoner")
+    graph.add_edge("tool_executor", "reasoner") #react loop created here 
 
     return graph.compile(checkpointer=checkpointer)

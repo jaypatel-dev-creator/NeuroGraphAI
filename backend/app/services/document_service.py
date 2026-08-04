@@ -1,11 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-
 from app.db.models import Document
 from app.rag.ingestor import ingest_file, IngestResult
 from app.rag.store import get_store
 from app.core.logging import get_logger
-from app.core.exceptions import RAGException, ForbiddenException
+from app.core.exceptions import RAGException, ForbiddenException,DocumentNotFoundException
+
 
 logger = get_logger(__name__)
 
@@ -69,6 +69,7 @@ async def get_document_by_sha256(db: AsyncSession, user_id: str, sha256: str) ->
         raise RAGException(f"Failed to fetch document '{sha256[:8]}...': {str(e)}")
 
 
+
 async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
     try:
         # Verify ownership before deletion
@@ -79,8 +80,8 @@ async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
             exists = result.scalar_one_or_none()
             if exists is not None:
                 raise ForbiddenException()
-            # Genuinely not found — let caller handle None / 404
-            return
+            # Genuinely not found 
+            raise DocumentNotFoundException(sha256)
 
         store = get_store()
         store.delete_by_sha256(sha256, user_id=user_id)  # scoped deletion in vector store
@@ -92,7 +93,7 @@ async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
         )
         await db.flush()
         logger.info(f"Document deleted — user: {user_id} sha256: {sha256[:8]}...")
-    except (RAGException, ForbiddenException):
+    except (RAGException, ForbiddenException, DocumentNotFoundException):
         raise
     except Exception as e:
         raise RAGException(f"Failed to delete document '{sha256[:8]}...': {str(e)}")

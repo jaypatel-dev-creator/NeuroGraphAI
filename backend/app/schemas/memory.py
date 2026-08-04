@@ -21,4 +21,5 @@ class ProfileUpsert(BaseModel):
 #request schema for update 
 class ProfileEntryUpdate(BaseModel):
     value: str
+
     

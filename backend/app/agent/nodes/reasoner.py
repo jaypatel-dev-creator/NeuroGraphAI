@@ -1,9 +1,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool
-
 from app.agent.state import AgentState
-from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -36,14 +34,20 @@ Tool usage rules:
   current time, "today", "now", "latest", "current", or anything time-sensitive —
   before searching the web or using any other tool. Never assume or guess the
   current date from search result content.
-- Call document_search only when the user has uploaded documents AND is asking
-  about their content. If no documents are uploaded, never call document_search.
-  If documents are uploaded but the question is general knowledge, answer directly
-  without calling document_search.
-  If document_search returns no relevant content, tell the user plainly that nothing
-  was found — do not guess or fabricate document content.
-- If no tool is needed, respond directly and conversationally
-- After using a tool, explain the result clearly to the user
+- Call document_search when the user has uploaded documents AND the user's
+  question could relate to any of the uploaded document names or their topics
+  (refer to the document names listed in the system context).
+  IMPORTANT: Even if the question seems like general knowledge you already know,
+  if the topic matches any uploaded document name — always call document_search
+  FIRST. Never answer from your own knowledge when a relevant document exists.
+  The document may contain specific, custom, or updated information that
+  overrides your general knowledge. Document answer always takes priority.
+  If no documents are uploaded, never call document_search.
+  If the question is clearly unrelated to any uploaded document names or topics
+  (e.g. weather, stock prices, current news), skip document_search and
+  answer directly.
+  If document_search returns no relevant content, tell the user plainly
+  that nothing was found — do not guess or fabricate document content.
 
 Memory rules:
 - If you learn anything meaningful about the user, save it using a MEMORY_UPDATE line

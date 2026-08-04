@@ -1,5 +1,3 @@
-import asyncio
-import concurrent.futures
 from langchain_core.tools import tool
 
 from app.rag.ingestor import embed_query, TOP_K, SIMILARITY_THRESHOLD
@@ -20,10 +18,8 @@ def make_document_search_tool(user_id: str):
         Example: 'What are the key findings in the report?', 'summarize the contract terms'
         """
         try:
+            
             store = get_store()
-
-            # embed_query is sync — call it directly, no event loop gymnastics needed.
-            # LangGraph calls this tool from a thread pool, so blocking here is fine.
             query_embedding = embed_query(query)
 
             chunks = store.query(
@@ -38,7 +34,7 @@ def make_document_search_tool(user_id: str):
 
             parts = []
             for i, chunk in enumerate(chunks):
-                filename = chunk["metadata"].get("filename", "unknown")
+                filename = chunk["metadata"].get("filename", "unknown") 
                 chunk_index = chunk["metadata"].get("chunk_index", i)
                 text = chunk["document"]
                 parts.append(f"[{filename}, chunk {chunk_index}]: {text}")

@@ -10,9 +10,9 @@ from app.core.exceptions import LTMException
 logger = get_logger(__name__)
 
 
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
 
 async def get_profile(db: AsyncSession, user_id: str) -> list[UserProfile]:
     try:
@@ -22,6 +22,8 @@ async def get_profile(db: AsyncSession, user_id: str) -> list[UserProfile]:
             .order_by(UserProfile.key)
         )
         return list(result.scalars().all())
+    except LTMException:
+        raise
     except Exception as e:
         raise LTMException(f"Failed to fetch LTM profile: {str(e)}")
 
@@ -42,7 +44,7 @@ async def upsert_profile_entry(
                 pg_insert(UserProfile)
                 .values(user_id=user_id, key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
-                    index_elements=["user_id", "key"],  # composite PK — was ["key"]
+                    index_elements=["user_id", "key"],  
                     set_={"value": value, "updated_at": now},
                 )
             )
@@ -52,7 +54,7 @@ async def upsert_profile_entry(
                 sqlite_insert(UserProfile)
                 .values(user_id=user_id, key=key, value=value, updated_at=now)
                 .on_conflict_do_update(
-                    index_elements=["user_id", "key"],  # composite PK — was ["key"]
+                    index_elements=["user_id", "key"],  
                     set_={"value": value, "updated_at": now},
                 )
             )
@@ -73,17 +75,20 @@ async def upsert_profile_entry(
         raise
     except Exception as e:
         raise LTMException(f"Failed to upsert LTM entry '{key}': {str(e)}")
+    
 
-
+##delete all enteries
 async def delete_profile(db: AsyncSession, user_id: str) -> None:
     try:
         await db.execute(delete(UserProfile).where(UserProfile.user_id == user_id))
         await db.flush()
         logger.info(f"LTM profile cleared — user: {user_id}")
+    except LTMException:      
+        raise
     except Exception as e:
         raise LTMException(f"Failed to clear LTM profile: {str(e)}")
 
-
+#delete specific entry 
 async def delete_profile_entry(db: AsyncSession, user_id: str, key: str) -> bool:
     try:
         result = await db.execute(
@@ -111,7 +116,7 @@ async def delete_profile_entry(db: AsyncSession, user_id: str, key: str) -> bool
     except Exception as e:
         raise LTMException(f"Failed to delete LTM entry '{key}': {str(e)}")
 
-
+# used by patch route, which is not used by client currently 
 async def update_profile_entry(
     db: AsyncSession,
     user_id: str,

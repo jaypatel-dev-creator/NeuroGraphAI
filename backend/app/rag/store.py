@@ -10,7 +10,7 @@ EMBEDDING_DIMENSION = 768
 
 _store = None
 
-
+#env based cofig switching for vector stores
 def use_pinecone() -> bool:
     return bool(get_settings().pinecone_api_key)
 
@@ -90,6 +90,7 @@ class ChromaVectorStore:
                 chunks.append({"document": doc, "metadata": meta})
 
         return chunks
+
 
     def delete_by_sha256(self, sha256: str, user_id: str) -> None:
         self.collection.delete(where={"$and": [

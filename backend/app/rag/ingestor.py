@@ -1,10 +1,8 @@
 import asyncio
 import hashlib
-
 from google import genai
 from google.genai import types
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.exceptions import RAGException
@@ -12,7 +10,7 @@ from app.rag.store import get_store
 
 logger = get_logger(__name__)
 
-# Constants
+# RAG Constants
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_PDF_PAGES = 50
 MAX_CHUNKS = 50
@@ -23,9 +21,7 @@ CHUNK_OVERLAP = 200
 TOP_K = 3
 SIMILARITY_THRESHOLD = 0.5
 
-# Lazily initialized on first embed call — not at import time.
-# Module-level init fires before lifespan setup and before .env is validated,
-# causing opaque crashes if google_api_key is missing.
+#singleton 
 _genai_client: genai.Client | None = None
 
 
@@ -36,7 +32,7 @@ def _get_genai_client() -> genai.Client:
     return _genai_client
 
 
-# Text splitter — safe to initialize at module level (no config dependency)
+# singleton 
 _splitter = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE,
     chunk_overlap=CHUNK_OVERLAP,
@@ -146,6 +142,7 @@ async def ingest_file(
         )
 
     # 3. Extract text
+    
     if content_type == "application/pdf":
         text = extract_text_from_pdf(content, filename)
     else:
@@ -169,7 +166,8 @@ async def ingest_file(
     embeddings = await asyncio.to_thread(embed_texts, chunks)
 
     # 6. Write to store — user_id in metadata enables per-user filtering at query time
-    chunk_ids = [f"{user_id}_{sha256}_{i}" for i in range(len(chunks))]
+    #creating chunk_ids and metadatas to store in vector db 
+    chunk_ids = [f"{user_id}_{sha256}_{i}" for i in range(len(chunks))] 
     metadatas = [
         {
             "sha256": sha256,

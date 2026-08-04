@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
+import bcrypt #for hashing 
 from jose import JWTError, jwt
 
 from app.core.config import get_settings
@@ -24,12 +24,12 @@ def create_access_token(subject: str) -> str:
     )
     payload = {
         "sub": subject,   # subject = user_id
-        "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "exp": expire,    #expiry
+        "iat": datetime.now(timezone.utc), #initialized at 
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
-
+#verifying access token 
 def decode_access_token(token: str) -> str:
     settings = get_settings()
     try:

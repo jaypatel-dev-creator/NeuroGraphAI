@@ -9,6 +9,7 @@ settings = get_settings()
 class Base(DeclarativeBase):#base class from which all models  will be inheriting  in models.py
     pass
 
+
 #creating engine based on environment 
 if settings.database_url: # production mode==> postgres(supabase) 
     engine = create_async_engine(

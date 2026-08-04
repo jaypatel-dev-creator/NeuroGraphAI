@@ -5,11 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
 from app.db.models import User
-from app.core.exceptions import DocumentNotFoundException
 from app.services.document_service import (
     ingest_and_persist,
     list_documents,
-    get_document_by_sha256,
     delete_document,
 )
 from app.schemas.document import DocumentRead, DocumentUploadResponse
@@ -60,15 +58,10 @@ async def list_documents_route(
     docs = await list_documents(db, current_user.id)
     return [DocumentRead.model_validate(d) for d in docs]
 
-
 @router.delete("/{sha256}", status_code=204)
 async def delete_document_route(
     sha256: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    doc = await get_document_by_sha256(db, current_user.id, sha256)
-    if not doc:
-        raise DocumentNotFoundException(sha256)
-
     await delete_document(db, current_user.id, sha256)
