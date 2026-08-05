@@ -110,16 +110,10 @@ async def build_ltm_context(db: AsyncSession, user_id: str) -> str:
 
 
 async def build_doc_context(db: AsyncSession, user_id: str) -> str:
-    """
-    Load uploaded document names for this user.
-    Grounds agent's document_search decisions in actual upload state.
-    Filename hint enables topic-matching — LLM checks document first
-    even for general knowledge questions if topic matches filename.
-    """
     result = await db.execute(
         select(Document.filename).where(Document.user_id == user_id)
     )
-    filenames = [row[0] for row in result.fetchall()]
+    filenames = result.scalars().all()
 
     if not filenames:
         return "[System: User has no documents uploaded. Do not call document_search.]"
@@ -127,10 +121,14 @@ async def build_doc_context(db: AsyncSession, user_id: str) -> str:
     names = ", ".join(filenames)
     return (
         f"[System: User has {len(filenames)} document(s) uploaded: {names}. "
+        f"Infer the likely content from the filenames. "
         f"If the user's question could relate to any of these document names or their topics, "
-        f"always call document_search BEFORE answering from general knowledge. "
-        f"Document content always takes priority over your own knowledge.]"
+        f"always call document_search FIRST before answering from general knowledge. "
+        f"Document content always takes priority over your own knowledge. "
+        f"If document_search returns no relevant content, tell the user plainly "
+        f"that nothing was found — do not guess or fabricate document content.]"
     )
+    
 
 async def generate_title(message: str) -> str:
     try:

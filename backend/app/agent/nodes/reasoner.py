@@ -30,10 +30,9 @@ Tool usage rules:
   DIRECTLY from your own knowledge. Do NOT search the web or use any tool
   for things you already know well. Tools are for real-time data you
   genuinely cannot know on your own, not a substitute for reasoning.
-- ALWAYS call get_datetime FIRST whenever the question involves today's date,
-  current time, "today", "now", "latest", "current", or anything time-sensitive —
-  before searching the web or using any other tool. Never assume or guess the
-  current date from search result content.
+- ALWAYS call get_datetime FIRST only when the question involves today's date,
+  current time, "today", "now", or anything requiring the exact current date/time.
+  Do NOT call get_datetime for "latest" or "current" unless the exact date matters.
 - Call document_search when the user has uploaded documents AND the user's
   question could relate to any of the uploaded document names or their topics
   (refer to the document names listed in the system context).
