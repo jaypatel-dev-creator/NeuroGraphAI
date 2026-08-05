@@ -175,8 +175,8 @@ async def stream_agent_response(
         }
 
         async with get_checkpointer_context(db_path) as checkpointer:
-            graph_with_memory = get_graph_with_checkpointer(checkpointer, user_id)
-            async for event in graph_with_memory.astream_events(
+            graph_with_memory = get_graph_with_checkpointer(checkpointer, user_id) #compiling graph 
+            async for event in graph_with_memory.astream_events( #invoking compiled graph with input state, config 
                 input_state,
                 config=config,
                 version="v2",
@@ -216,11 +216,11 @@ async def stream_agent_response(
                 async with AsyncSessionLocal() as fresh_db:
                     try:
                         saved_keys = await memory_writer_node(state.values, fresh_db, user_id)
-                        await fresh_db.commit()
+                        await fresh_db.commit() #manual commit and rollback cause we are not using DI for sessions here
                         if saved_keys:
                             yield format_sse({"type": "memory_update", "keys": saved_keys})
                     except Exception as e:
-                        await fresh_db.rollback()
+                        await fresh_db.rollback() #manual rollback. 
                         logger.error(f"Memory writer failed for user {user_id}: {str(e)}")
 
         yield format_sse({"type": "done"})
@@ -231,9 +231,9 @@ async def stream_agent_response(
 
 
 def build_chat_history(state) -> list[ChatMessage]:
-    messages = []
+    messages = [] #initially empty list 
     if not state or not state.values.get("messages"):
-        return messages
+        return messages 
 
     for msg in state.values["messages"]:
         if isinstance(msg, HumanMessage):

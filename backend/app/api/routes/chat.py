@@ -28,11 +28,7 @@ async def stream_chat(
     thread = await get_thread_by_id(db, current_user.id, request.thread_id)
     if not thread:
         raise ThreadNotFoundException(request.thread_id)
-
-    # Generate and commit title in a separate session BEFORE streaming starts.
-    # The route's db session stays open for the entire stream duration —
-    # committing title inside it would only happen after streaming ends,
-    # which is too late for the frontend's refreshThreadTitle call.
+    
     if not thread.is_titled:
         title = await generate_title(request.message)
         async with AsyncSessionLocal() as title_db:
