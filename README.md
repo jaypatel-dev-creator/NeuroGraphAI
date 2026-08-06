@@ -95,6 +95,18 @@ Responses stream token-by-token. Tool execution, memory updates, and errors are 
 
 ---
 
+## Infrastructure & Reliability
+
+### Supabase Free Tier — Inactivity Pause Prevention
+
+**Problem:** Supabase's free tier automatically pauses database projects after 7 days of inactivity. A paused DB means the backend loses its connection and the app breaks entirely for any visitor.
+
+**Decision:** Implemented a GitHub Actions scheduled workflow (`keep-alive.yml`) that pings the `/health` endpoint every 2 days. The endpoint performs a live `SELECT 1` against Supabase Postgres and returns `200` if reachable, `503` if not. This generates enough DB activity to reset Supabase's inactivity clock continuously.
+
+**Why every 2 days:** Supabase pauses after 7 days. A 2-day interval gives a 5-day safety buffer — meaning 3 consecutive workflow failures would need to occur before a pause is triggered. Chosen over a paid Supabase upgrade ($25/mo) — unnecessary cost for a portfolio project.
+
+**Why GitHub Actions over a third-party pinger:** The workflow lives in the repo, is version-controlled, and is visible to anyone reviewing the codebase. It also fails visibly in the Actions tab if the health check returns non-200 — so infrastructure issues surface as workflow failures rather than silent broken states.
+
 ## Repository Structure
 
 ```
