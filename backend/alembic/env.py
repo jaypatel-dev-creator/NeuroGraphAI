@@ -14,7 +14,7 @@ settings = get_settings()
 
 #creating sync driver database urls' cause alembic requires sync driver 
 #for production 
-if settings.database_url:
+if settings.database_url:re
     sync_url = settings.database_url.replace(
         "postgresql+psycopg://", "postgresql+psycopg2://"
     ).replace(
