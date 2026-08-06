@@ -65,7 +65,7 @@ async def get_chat_history(
     config = {"configurable": {"thread_id": thread_id}}
 
     async with get_checkpointer_context(db_path) as checkpointer:
-        graph_with_memory = get_graph_with_checkpointer(checkpointer, current_user.id)
+        graph_with_memory = get_graph_with_checkpointer(checkpointer, current_user.id) #again compiling graph with thread id to get state using aget_state
         state = await graph_with_memory.aget_state(config)
 
     messages = build_chat_history(state)

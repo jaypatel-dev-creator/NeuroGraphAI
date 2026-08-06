@@ -1,0 +1,37 @@
+name: Keep Alive — Supabase DB Ping
+
+on:
+  schedule:
+    # Runs every 2 days at 08:00 UTC
+    # Supabase free tier pauses after 7 days of inactivity.
+    # Pinging every 2 days gives a 5-day safety buffer — meaning
+    # 3 consecutive failures would need to occur before a pause.
+    - cron: "0 8 */2 * *"
+  workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  ping:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping /health
+        run: |
+          echo "Pinging https://neurographai.onrender.com/health ..."
+
+          RESPONSE=$(curl --silent --write-out "\nHTTP_STATUS:%{http_code}" \
+            --max-time 60 \
+            https://neurographai.onrender.com/health)
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
+
+          echo "Status: $HTTP_STATUS"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "Health check failed — DB may be unreachable."
+            exit 1
+          fi
+
+          echo "Health check passed — Supabase is alive."
