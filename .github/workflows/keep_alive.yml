@@ -11,17 +11,22 @@ on:
 
 jobs:
   ping:
-    name: Ping Health Endpoint
+    name: Ping Supabase Directly
     runs-on: ubuntu-latest
 
     steps:
-      - name: Ping /health
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          echo "Pinging https://neurographai.onrender.com/health ..."
+          echo "Pinging Supabase at $SUPABASE_URL ..."
 
           RESPONSE=$(curl --silent --write-out "\nHTTP_STATUS:%{http_code}" \
-            --max-time 60 \
-            https://neurographai.onrender.com/health)
+            --max-time 30 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/")
 
           HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
           BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
@@ -30,8 +35,8 @@ jobs:
           echo "Response: $BODY"
 
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "Health check failed — DB may be unreachable."
+            echo "Supabase ping failed — DB may be paused or unreachable."
             exit 1
           fi
 
-          echo "Health check passed — Supabase is alive."
+          echo "Supabase is alive."
