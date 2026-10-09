@@ -16,7 +16,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 
-#creating JWT access token. 
+#creating JWT access token. ==> called when users sign up/creates account as well as when sign in/login 
 def create_access_token(subject: str) -> str:
     settings = get_settings()
     expire = datetime.now(timezone.utc) + timedelta(

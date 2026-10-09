@@ -5,7 +5,7 @@ from sqlalchemy import select, delete
 
 from app.db.models import Thread
 from app.core.logging import get_logger
-from app.core.exceptions import ThreadServiceException, ForbiddenException
+from app.core.exceptions import ThreadServiceException
 
 logger = get_logger(__name__)
 
@@ -49,34 +49,35 @@ async def list_threads(db: AsyncSession, user_id: str) -> list[Thread]:
 #get/threads/id
 async def get_thread_by_id(db: AsyncSession, user_id: str, thread_id: str) -> Thread | None:
     """
-    Return a thread by ID, scoped to user.
-    Returns None if not found. Raises ForbiddenException if thread exists but belongs to another user.
+    Return a thread by ID, scoped to the user.
+    Returns None if the thread doesn't exist OR belongs to another user,
+    so the caller cannot tell the two cases apart (404 for both).
     """
     try:
         result = await db.execute(
-            select(Thread).where(Thread.id == thread_id)
+            select(Thread).where(
+                Thread.id == thread_id,
+                Thread.user_id == user_id,
+            )
         )
-        thread = result.scalar_one_or_none()
-
-        if thread is None:
-            return None
-
-        # Thread exists but belongs to a different user — 403, not 404
-        # Returning 404 here would leak whether the thread_id exists at all
-        if thread.user_id != user_id:
-            raise ForbiddenException()
-
-        return thread
-    except (ThreadServiceException, ForbiddenException):
+        return result.scalar_one_or_none()
+    except ThreadServiceException:
         raise
     except Exception as e:
         raise ThreadServiceException(f"Failed to fetch thread '{thread_id}': {str(e)}")
 
 #patch/threads
 
-async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
-    """Rename a thread and mark it as titled."""
+async def rename_thread(db: AsyncSession, user_id: str, thread_id: str, title: str) -> Thread | None:
+    """
+    Rename a thread and mark it as titled, scoped to the user.
+    Returns None if the thread doesn't exist or belongs to another user.
+    """
     try:
+        thread = await get_thread_by_id(db, user_id, thread_id)
+        if thread is None:
+            return None
+
         thread.title = title
         thread.is_titled = True
         await db.flush()
@@ -86,15 +87,26 @@ async def rename_thread(db: AsyncSession, thread: Thread, title: str) -> Thread:
     except ThreadServiceException:
         raise
     except Exception as e:
-        raise ThreadServiceException(f"Failed to rename thread '{thread.id}': {str(e)}")
+        raise ThreadServiceException(f"Failed to rename thread '{thread_id}': {str(e)}")
 
 #delete/thread/id
-async def delete_thread(db: AsyncSession, thread_id: str) -> None:
-    """Delete a thread by ID. """
+async def delete_thread(db: AsyncSession, user_id: str, thread_id: str) -> bool:
+    """
+    Delete a thread by ID, scoped to the user.
+    Returns True if a thread was deleted, False if it doesn't exist or belongs to another user.
+    """
     try:
-        await db.execute(delete(Thread).where(Thread.id == thread_id))
+        result = await db.execute(
+            delete(Thread).where(
+                Thread.id == thread_id,
+                Thread.user_id == user_id,
+            )
+        )
         await db.flush()
-        logger.info(f"Thread deleted: {thread_id}")
+        deleted = result.rowcount > 0
+        if deleted:
+            logger.info(f"Thread deleted: {thread_id}")
+        return deleted
     except ThreadServiceException:
         raise
     except Exception as e:

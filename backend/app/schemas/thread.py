@@ -19,4 +19,5 @@ class ThreadRead(BaseModel):
 class ThreadUpdate(BaseModel):
     title: str
 
+
     

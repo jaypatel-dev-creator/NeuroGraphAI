@@ -11,7 +11,7 @@ from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
 
 logger = get_logger(__name__)
 
-#sign in 
+#create account /sign up
 async def register_user(db: AsyncSession, payload: RegisterRequest) -> TokenResponse:
     # Check email uniqueness
     existing = await db.execute(select(User).where(User.email == payload.email))
@@ -21,7 +21,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> TokenResp
     user = User(
         id=str(uuid.uuid4()),#generating id 
         email=payload.email,
-        hashed_password=hash_password(payload.password),#hashing the password 
+        hashed_password=hash_password(payload.password),#hashing the password while storing using bcrypt 
     )
     db.add(user)
     await db.flush()
@@ -31,7 +31,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> TokenResp
     token = create_access_token(subject=user.id)
     return TokenResponse(access_token=token)
 
-#log in 
+#log in /sign in 
 async def login_user(db: AsyncSession, payload: LoginRequest) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()

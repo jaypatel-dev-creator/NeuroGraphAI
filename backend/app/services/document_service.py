@@ -4,7 +4,7 @@ from app.db.models import Document
 from app.rag.ingestor import ingest_file, IngestResult
 from app.rag.store import get_store
 from app.core.logging import get_logger
-from app.core.exceptions import RAGException, ForbiddenException,DocumentNotFoundException
+from app.core.exceptions import RAGException, DocumentNotFoundException
 
 
 logger = get_logger(__name__)
@@ -72,15 +72,10 @@ async def get_document_by_sha256(db: AsyncSession, user_id: str, sha256: str) ->
 
 async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
     try:
-        # Verify ownership before deletion
+        # Scoped lookup: finds the document only if it belongs to this user
         doc = await get_document_by_sha256(db, user_id, sha256)
         if doc is None:
-            # Could be not found OR wrong owner — fetch without user filter to distinguish
-            result = await db.execute(select(Document).where(Document.sha256 == sha256))
-            exists = result.scalar_one_or_none()
-            if exists is not None:
-                raise ForbiddenException()
-            # Genuinely not found 
+            # Not found or belongs to another user — same 404 either way
             raise DocumentNotFoundException(sha256)
 
         store = get_store()
@@ -93,7 +88,7 @@ async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
         )
         await db.flush()
         logger.info(f"Document deleted — user: {user_id} sha256: {sha256[:8]}...")
-    except (RAGException, ForbiddenException, DocumentNotFoundException):
+    except (RAGException, DocumentNotFoundException):
         raise
     except Exception as e:
         raise RAGException(f"Failed to delete document '{sha256[:8]}...': {str(e)}")

@@ -7,10 +7,11 @@ class Settings(BaseSettings):
     google_api_key: str
 
     # LangSmith
-    langchain_tracing_v2: str = "true"
-    langchain_endpoint: str = "https://api.smith.langchain.com"
-    langchain_api_key: str
-    langchain_project: str = "neurograph-ai"
+   
+    langsmith_tracing: str = "false"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_api_key: str = ""
+    langsmith_project: str = "neurograph-ai"
 
     # Tavily
     tavily_api_key: str
@@ -35,10 +36,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24 * 7   # 7 days 
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
+        env_file=".env", #read configs from .env file 
+        env_file_encoding="utf-8", 
+        case_sensitive=False, # make configurations key case insensitive 
+        extra="ignore", #ignore any extra conifg 
     )
 
 

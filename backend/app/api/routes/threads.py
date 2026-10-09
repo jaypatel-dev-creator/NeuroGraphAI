@@ -56,10 +56,9 @@ async def rename_thread_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    thread = await get_thread_by_id(db, current_user.id, thread_id)
+    thread = await rename_thread(db, current_user.id, thread_id, payload.title)
     if not thread:
         raise ThreadNotFoundException(thread_id)
-    thread = await rename_thread(db, thread, payload.title)
     return ThreadRead.model_validate(thread)
 
 
@@ -69,7 +68,6 @@ async def delete_thread_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    thread = await get_thread_by_id(db, current_user.id, thread_id)
-    if not thread:
+    deleted = await delete_thread(db, current_user.id, thread_id)
+    if not deleted:
         raise ThreadNotFoundException(thread_id)
-    await delete_thread(db, thread_id)

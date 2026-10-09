@@ -1,7 +1,6 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
 import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,9 +11,7 @@ from app.core.exceptions import (
     neurograph_exception_handler,
     generic_exception_handler,
 )
-
-from app.api.routes import chat, threads, memory, health, documents
-from app.api.routes import auth
+from app.api.routes import chat, threads, memory, health, documents, auth 
 from app.db.base import engine
 from app.db import models  # noqa: F401
 
@@ -33,11 +30,11 @@ async def lifespan(app: FastAPI):
     logger.info("Starting NeuroGraph AI...")
 
     # LangSmith
-    os.environ["LANGCHAIN_TRACING_V2"] = settings.langchain_tracing_v2
-    os.environ["LANGCHAIN_ENDPOINT"] = settings.langchain_endpoint
-    os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
-    os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
-    logger.info(f"LangSmith tracing active — project: {settings.langchain_project}")
+    os.environ["LANGSMITH_TRACING"] = settings.langsmith_tracing
+    os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+    os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
+    os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+    logger.info(f"LangSmith tracing: {settings.langsmith_tracing} — project: {settings.langsmith_project}")
 
     # Tavily
     os.environ["TAVILY_API_KEY"] = settings.tavily_api_key
@@ -45,8 +42,8 @@ async def lifespan(app: FastAPI):
 
     # Data directories
     if not settings.database_url:
-        Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True) #create data folder that holds  neurograph.db
+        Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True) #create data (already created above) that holds checkpoints.db
         logger.info(f"SQLite mode — db: {settings.sqlite_db_path}")
         logger.info(f"Checkpoint db: {settings.checkpoint_db_path}")
     else:
@@ -90,7 +87,7 @@ def create_app() -> FastAPI:
     )
 
     allowed_origins = [settings.frontend_url, "https://neuro-graph-ai.vercel.app"]
-
+#Binding middleware to main application instance 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -103,7 +100,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(NeuroGraphException, neurograph_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
 
-    # Routers — auth first, then protected routes
+    # Binding Routers to main application instance  — auth first, then protected routes
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(chat.router, prefix="/chat", tags=["Chat"])
     app.include_router(threads.router, prefix="/threads", tags=["Threads"])

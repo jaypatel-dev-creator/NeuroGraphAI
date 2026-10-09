@@ -16,6 +16,8 @@ from app.memory.checkpointer import get_db_path, use_postgres_checkpointer
 from app.schemas.chat import ChatMessage
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.exceptions import ThreadNotFoundException
+from app.services.thread_service import get_thread_by_id
 
 logger = get_logger(__name__)
 
@@ -160,6 +162,12 @@ async def stream_agent_response(
 ) -> AsyncGenerator[str, None]:
 
     try:
+        # Ownership check — the checkpoint is keyed by thread_id only, so verify here
+        thread = await get_thread_by_id(db, user_id, thread_id)
+        if thread is None:
+            yield format_sse({"type": "error", "message": "Thread not found."})
+            return
+
         db_path = get_db_path()
         ltm_context = await build_ltm_context(db, user_id)
         doc_context = await build_doc_context(db, user_id)
@@ -249,3 +257,22 @@ def build_chat_history(state) -> list[ChatMessage]:
                 messages.append(ChatMessage(role="ai", content=clean_content))
 
     return messages
+
+
+async def load_chat_history(db: AsyncSession, user_id: str, thread_id: str) -> list[ChatMessage]:
+    """
+    Load a thread's saved conversation from the checkpointer.
+    Raises ThreadNotFoundException if the thread doesn't exist or belongs to another user.
+    """
+    thread = await get_thread_by_id(db, user_id, thread_id)
+    if thread is None:
+        raise ThreadNotFoundException(thread_id)
+
+    db_path = get_db_path()
+    config = {"configurable": {"thread_id": thread_id}}
+
+    async with get_checkpointer_context(db_path) as checkpointer:
+        graph_with_memory = get_graph_with_checkpointer(checkpointer, user_id)
+        state = await graph_with_memory.aget_state(config)
+
+    return build_chat_history(state)

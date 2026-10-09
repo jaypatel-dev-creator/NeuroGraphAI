@@ -4,16 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.db.base import AsyncSessionLocal
 from app.db.models import User
-from app.memory.checkpointer import get_db_path
 from app.schemas.chat import ChatRequest, ChatHistoryRead
 from app.core.exceptions import ThreadNotFoundException
 from app.services.chat_service import (
     stream_agent_response,
     generate_title,
-    get_checkpointer_context,
-    build_chat_history,
+    load_chat_history,
 )
-from app.agent.graph import get_graph_with_checkpointer
 from app.services.thread_service import get_thread_by_id
 
 router = APIRouter()
@@ -57,16 +54,5 @@ async def get_chat_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    thread = await get_thread_by_id(db, current_user.id, thread_id)
-    if not thread:
-        raise ThreadNotFoundException(thread_id)
-
-    db_path = get_db_path()
-    config = {"configurable": {"thread_id": thread_id}}
-
-    async with get_checkpointer_context(db_path) as checkpointer:
-        graph_with_memory = get_graph_with_checkpointer(checkpointer, current_user.id) #again compiling graph with thread id to get state using aget_state
-        state = await graph_with_memory.aget_state(config)
-
-    messages = build_chat_history(state)
+    messages = await load_chat_history(db, current_user.id, thread_id)
     return ChatHistoryRead(thread_id=thread_id, messages=messages)

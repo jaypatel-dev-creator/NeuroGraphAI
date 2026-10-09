@@ -6,24 +6,26 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 
 from app.agent.state import AgentState
+#importing nodes 
 from app.agent.nodes.reasoner import reasoner_node
 from app.agent.nodes.tool_executor import tool_executor_node
+#importing tools 
 from app.agent.tools.calculator import calculator
 from app.agent.tools.search import get_search_tool
 from app.agent.tools.weather import weather
 from app.agent.tools.finance import finance
 from app.agent.tools.datetime_tool import get_datetime
 from app.agent.tools.document_search import make_document_search_tool
+
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.exceptions import AgentException
 
 logger = get_logger(__name__)
 
-_initialized: bool = False  # guards against get_graph_with_checkpointer being called before startup
 
-# --- Module-level singletons — built once at startup, reused across all requests ---
-# These tools are stateless and user-agnostic — no reason to rebuild per request
+# --- Module-level singletons (cause stateless) — built once at startup, reused across all requests ---
+_initialized: bool = False  # guards against get_graph_with_checkpointer being called before startup
 _static_tools: list[BaseTool] = []
 _base_llm: ChatGoogleGenerativeAI | None = None  # LLM client without tools bound
 
@@ -40,11 +42,6 @@ def _build_static_tools() -> list[BaseTool]:
 
 
 def get_tools(user_id: str) -> list[BaseTool]:
-    """
-    Build the full tool list for a specific request.
-    Reuses module-level static tools — only document_search is built per-request
-    because it is user scoped.
-    """
     return _static_tools + [make_document_search_tool(user_id)]
 
 
@@ -62,10 +59,10 @@ def should_use_tool(state: AgentState) -> str:
 def compile_graph() -> None:
     global _initialized, _static_tools, _base_llm
 
-    # Build static tools once — reused for every request
+    # Build static tools and store in singleton 
     _static_tools = _build_static_tools()
 
-    # Build base LLM client once — bind_tools() called per-request with user-scoped tool list
+    # Build base LLM client once and store in singleton
     settings = get_settings()
     _base_llm = ChatGoogleGenerativeAI(
         model="gemini-3.1-flash-lite",
