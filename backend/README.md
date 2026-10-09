@@ -1,9 +1,8 @@
 # NeuroGraph AI — Backend
 
-A production-focused conversational AI agent built with LangGraph, FastAPI, and Gemini 3.1 Flash Lite. The system features a manually constructed ReAct graph, dual-layer memory architecture (STM + LTM), and Dynamic Agentic RAG — runtime document ingestion with agent-driven retrieval decisions, not pipeline-forced retrieval.
+A conversational AI agent built with LangGraph, FastAPI, and Gemini 3.1 Flash Lite, deployed on free-tier cloud hosting. Features a manually constructed ReAct graph, dual-layer memory architecture (STM + LTM), and agentic RAG — runtime document ingestion with retrieval as a tool call, not a pipeline step forced on every message.
 
 ---
-
 
 ## Architecture
 
@@ -29,6 +28,9 @@ FastAPI Backend
                     │          END       │
                     └─────────┬──────────┘
                               │
+                    memory_writer runs here
+                    (post-graph, fresh DB session)
+                              │
               ┌───────────────┼───────────────┐
               │               │               │
     ┌─────────▼──────┐ ┌──────▼──────┐ ┌─────▼──────────┐
@@ -46,7 +48,6 @@ Tools registered in agent:
 ```
 
 ---
-
 
 ## Tech Stack
 
@@ -66,7 +67,6 @@ Tools registered in agent:
 
 ---
 
-
 ## Project Structure
 
 ```
@@ -85,9 +85,9 @@ backend/
 │   │   ├── graph.py                 # LangGraph graph definition
 │   │   ├── state.py                 # AgentState TypedDict
 │   │   ├── nodes/
-│   │   │   ├── reasoner.py          # LLM reasoning node + system prompt
+│   │   │   ├── reasoner.py          # LLM reasoning node + system prompt builder
 │   │   │   ├── tool_executor.py     # Tool execution node
-│   │   │   └── memory_writer.py     # LTM write node — returns saved keys
+│   │   │   └── memory_writer.py     # LTM write function — called post-graph, returns saved keys
 │   │   └── tools/
 │   │       ├── calculator.py
 │   │       ├── search.py            # Tavily web search
@@ -107,15 +107,14 @@ backend/
 │   │   ├── checkpointer.py          # STM checkpointer config
 │   │   └── ltm_store.py             # LTM CRUD operations (repository layer)
 │   ├── rag/
-│   │   ├── __init__.py
 │   │   ├── store.py                 # Vector store singleton — ChromaDB/Pinecone switching
 │   │   └── ingestor.py              # File validation, text extraction, chunking, embedding
 │   ├── schemas/
-│   │   ├── auth.py                  # RegisterRequest, LoginRequest, TokenResponse, UserRead
+│   │   ├── auth.py
 │   │   ├── chat.py
 │   │   ├── thread.py
 │   │   ├── memory.py
-│   │   └── document.py              # DocumentRead, DocumentUploadResponse
+│   │   └── document.py
 │   ├── services/
 │   │   ├── auth_service.py          # Register, login — bcrypt + JWT
 │   │   ├── chat_service.py          # Chat business logic — streaming, SSE, LangGraph orchestration
@@ -146,38 +145,33 @@ Implemented via LangGraph's checkpointing system. Each conversation thread maint
 
 ### Long-Term Memory (LTM)
 
-Implemented as a key-value profile store backed by SQLAlchemy. The agent extracts persistent user facts — name, location, profession, preferences, interests, and any other personal detail shared in conversation — and writes them via a `memory_writer` node that runs post-graph with a fresh database session. On each new request, the stored profile is injected into the system prompt so the agent retains context across sessions and threads.
+Implemented as a key-value profile store backed by SQLAlchemy. The model emits `MEMORY_UPDATE: key=<key> value=<value>` lines at the end of its reply when it learns something about the user. After the graph finishes, `chat_service.py` calls `memory_writer` — a plain async function (not a graph node) — with a fresh database session. It regex-parses those lines and upserts the values into the `user_profile` table. On each new request, the stored profile is injected into the system prompt so the agent retains user context across sessions and threads.
 
 - **Local dev:** SQLite → `data/neurograph.db`
 - **Production:** Supabase Postgres
 
-The `memory_writer` node returns a list of keys saved on each turn. The chat service captures this and emits a `memory_update` SSE event to the frontend, which displays a passive `🧠 Memory updated` notification.
+When keys are saved, `chat_service.py` emits a `memory_update` SSE event to the frontend, which displays a passive 🧠 Memory updated notification.
 
-The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval — embedding the user query and retrieving only the top-k relevant profile entries — is the recommended approach to avoid unnecessary context window usage.
+The current implementation injects the full profile on every request. In production systems with large profiles, semantic retrieval — embedding the user query and fetching only the top-k relevant entries — would be the right approach to avoid unnecessary context window usage.
 
 ---
 
-## Dynamic Agentic RAG
+## Agentic RAG
 
-Users upload PDF or TXT documents at runtime. The backend ingests them on the fly — extracts text, chunks, embeds, and stores in a vector database. The agent then has a `document_search` tool in its existing ReAct loop and decides when to use it based on the user's question. This is not a separate mode or pipeline — retrieval is a decision made by the agent, not a forced step on every request.
+### Why Not Pipeline RAG
 
-### Why Agentic, Not Pipeline
-
-Pipeline RAG retrieves on every message regardless of relevance — injecting document context even when the user asks a general knowledge question. Agentic RAG treats retrieval as one tool among many. The agent calls `document_search` only when it determines the user's question relates to uploaded document content. General knowledge questions are answered directly without touching the vector store.
+Pipeline RAG retrieves on every message regardless of relevance — injecting document context even when the user asks a general knowledge question. In this project, retrieval is a tool the agent can call. The agent chooses to call `document_search` based on the user's question and the list of uploaded filenames it sees in the system prompt. General knowledge questions are answered directly without touching the vector store.
 
 ### Document Grounding
 
-At every request, `chat_service.py` queries the `documents` table and injects the current upload state into the system prompt as `doc_context`:
-```
-# When documents exist:
-[System: User has 2 document(s) uploaded: report.pdf, contract.txt. Only call document_search when the user is asking about content from these documents.]
+At every request, `chat_service.py` queries the `documents` table and injects the current upload state into the system prompt as `doc_context`. When documents exist, the prompt lists their filenames and instructs the agent to call `document_search` first when the question could relate to any of them. When no documents exist, the prompt explicitly tells the agent not to call `document_search`.
 
-# When no documents exist:
-[System: User has no documents uploaded. Do not call document_search.]
-```
+This means retrieval routing is prompt-driven based on filenames — not a learned decision.
+
 ---
 
 ### Ingest Pipeline
+
 ```
 Upload → Validate (size, type) → SHA256 dedup check
 → Extract text (PyMuPDF for PDF, decode for TXT)
@@ -186,43 +180,41 @@ Upload → Validate (size, type) → SHA256 dedup check
 → Write to ChromaDB / Pinecone
 → Persist metadata to documents table
 ```
-**Deduplication:** SHA256 hash of file content. Uploading the same file twice — even with a different filename — skips re-embedding entirely and returns `already indexed — ready to query`.
 
-**Chunking:** via LangChain's RecursiveCharacterTextSplitter.
+**Deduplication:** SHA256 hash of file content, scoped per user. Uploading the same file twice skips re-embedding and returns `already indexed — ready to query`.
 
+**Chunking:** LangChain's `RecursiveCharacterTextSplitter` — 1000 character chunks, 200 character overlap.
 
-**Embedding:** Gemini `gemini-embedding-001` with `output_dimensionality=768`. Batch embedding — all chunks in a single API call. Separate task types: `RETRIEVAL_DOCUMENT` at ingest, `RETRIEVAL_QUERY` at search time.
+**Embedding:** Gemini `gemini-embedding-001` at 768 dimensions. All chunks embedded in a single API call. Separate task types: `RETRIEVAL_DOCUMENT` at ingest, `RETRIEVAL_QUERY` at search time.
 
-**Retrieval:** Top-k=3 cosine similarity search. Chunks below a similarity threshold of 0.5 are discarded — prevents irrelevant content from reaching the agent when no relevant document exists for the query.
+**Retrieval:** Top-k=3 cosine similarity search. Chunks below a similarity threshold of 0.5 are discarded.
 
 ### Vector Store — Env-Based Switching
-
-Same pattern as SQLite/Postgres switching for the main database:
 
 | Environment | Store | Config |
 |---|---|---|
 | Local (default) | ChromaDB | `PINECONE_API_KEY` absent |
 | Production | Pinecone | `PINECONE_API_KEY` set |
 
-The `init_store()` function runs once at startup in the FastAPI lifespan. Both backends implement the same interface (`add`, `query`, `delete_by_sha256`, `has_sha256`) — the rest of the codebase never knows which is active.
+`init_store()` runs once at startup in the FastAPI lifespan. Both backends implement the same interface (`add`, `query`, `delete_by_sha256`, `has_sha256`) — the rest of the codebase never knows which is active.
 
 ### Current Constraints
 
-| Constraint | Value | Reason |
-|---|---|---|
-| Supported formats | PDF, TXT only | PyMuPDF + plain decode |
-| Max file size | 10MB | Validated before processing |
-| Max PDF pages | 50 | Controls text extraction scope |
-| Max chunks per document | 50 | Controls embedding API calls — applies to both PDF and TXT |
-| PDF type | Text-based only | PyMuPDF extracts digital text layer — scanned/image PDFs rejected |
-| Similarity threshold | 0.5 cosine similarity | Chunks below threshold discarded at retrieval |
-| User isolation | Per-user — chunks namespaced by `user_id` in metadata, all queries and deletes filtered at vector store level | Auth + per-user scoping implemented |
+| Constraint | Value |
+|---|---|
+| Supported formats | PDF, TXT only |
+| Max file size | 10MB |
+| Max PDF pages | 50 |
+| Max chunks per document | 50 |
+| PDF type | Text-based only — scanned/image PDFs rejected |
+| Similarity threshold | 0.5 cosine similarity |
+| User isolation | `user_id` in chunk metadata; all queries and deletes filtered at vector store level |
 
 ---
 
 ## Agent Graph
 
-The ReAct graph is built manually using LangGraph's `StateGraph` — not the prebuilt `create_react_agent`. This allows custom node definitions for tool execution and memory writing.
+The ReAct graph is built manually using LangGraph's `StateGraph` — not the prebuilt `create_react_agent`. This was necessary because the LTM write step needs a database session injected at request time, and it runs after the graph finishes rather than inside it — something prebuilt abstractions don't support.
 
 ```
 START
@@ -234,13 +226,11 @@ reasoner          ← Gemini 3.1 Flash Lite, decides next action
 │
 └── done? ──► END
                │
-               └── memory_writer runs post-graph
-                   (fresh DB session, outside graph)
+               └── memory_writer called here by chat_service.py
+                   (fresh DB session, outside the graph)
 ```
 
-**Why manual graph construction:** The prebuilt `create_react_agent` does not support custom post-graph hooks like the LTM memory writer, which requires a database session injected at request time rather than graph compile time.
-
-**Recursion limit:** Configured with `recursion_limit=10` — maximum 5 tool call cycles per response. Prevents runaway ReAct loops (agent calling tools indefinitely without reaching a final answer) and unexpected API cost spikes.
+**Recursion limit:** Set to 10 — maximum 5 tool call cycles per response. Prevents runaway loops and unexpected API cost spikes.
 
 ---
 
@@ -255,44 +245,46 @@ reasoner          ← Gemini 3.1 Flash Lite, decides next action
 | `get_datetime` | Custom | Current UTC date and time |
 | `document_search` | Custom | Semantic search across user-uploaded documents (RAG) |
 
-All tools follow the same error contract — exceptions are caught internally and returned as error strings to the LLM. Tool failures never crash the agent.
+All tools catch exceptions internally and return error strings to the LLM. Tool failures never crash the agent.
 
-Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), this runs the coroutine directly. For sync tools, LangChain dispatches to a thread pool executor via `run_in_executor`, keeping the async event loop non-blocking.
+Tool execution uses `tool.ainvoke()` throughout. For async tools (`weather`), this runs the coroutine directly. For sync tools, LangChain dispatches to a thread pool via `run_in_executor`, keeping the async event loop non-blocking.
 
 ---
 
 ## Exception Handling
 
-A typed exception hierarchy ensures every error surfaces with the correct HTTP status code and a meaningful message — nothing leaks raw stack traces to the client.
+A typed exception hierarchy ensures every error surfaces with the correct HTTP status code — nothing leaks raw stack traces to the client.
+
+```
 NeuroGraphException (base)
-├── AgentException                → 500 — graph not initialized
-├── ThreadNotFoundException       → 404 — thread lookup failed
-├── ThreadServiceException        → 500 — unexpected thread DB error
-├── ProfileEntryNotFoundException → 404 — LTM key not found
-├── LTMException                  → 500 — unexpected LTM DB error
-├── RAGException                  → 500 / 422 — ingest validation or unexpected RAG error
-├── DocumentNotFoundException     → 404 — document sha256 not found
-├── UnauthorizedException         → 401 — missing or invalid JWT
-├── ForbiddenException            → 403 — authenticated but not authorized (wrong owner)
-└── UserAlreadyExistsException    → 409 — email already registered
-**Route layer** raises specific 404-type exceptions for expected business logic failures.
-**Service layer** wraps unexpected errors in typed 500-type exceptions.
-**Global handler** catches all `NeuroGraphException` subclasses — logs warnings for 4xx, errors with stack traces for 5xx.
-**Fallback handler** catches anything else as a generic 500 — nothing internal exposed to the client.
+├── AgentException                → 500
+├── ThreadNotFoundException       → 404
+├── ThreadServiceException        → 500
+├── ProfileEntryNotFoundException → 404
+├── LTMException                  → 500
+├── RAGException                  → 500 / 422
+├── DocumentNotFoundException     → 404
+├── UnauthorizedException         → 401
+├── ForbiddenException            → 403
+└── UserAlreadyExistsException    → 409
+```
+
+Route layer raises typed exceptions for expected failures. Service layer wraps unexpected errors in 500-type exceptions. Global handler logs warnings for 4xx, errors with stack traces for 5xx. Fallback handler catches anything else as a generic 500.
 
 ---
 
 ## Service Layer
 
-Routes are kept thin — request validation, existence checks, and response serialization only. All business logic lives in the service layer.
+Routes are kept thin — request validation and response serialization only. All business logic lives in the service layer.
 
-| Service | Location | Responsibility |
-|---|---|---|
-| Chat service | `services/chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, doc context injection, title generation |
-| Thread service | `services/thread_service.py` | Thread CRUD operations |
-| Document service | `services/document_service.py` | Document ingest pipeline, list, delete |
-| LTM repository | `memory/ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
-| Auth service | `services/auth_service.py` | User registration, login — bcrypt hashing, JWT issuance |
+| Service | Responsibility |
+|---|---|
+| `chat_service.py` | SSE streaming, LangGraph orchestration, memory writing, doc context injection, title generation |
+| `thread_service.py` | Thread CRUD operations |
+| `document_service.py` | Document ingest pipeline, list, delete |
+| `ltm_store.py` | UserProfile DB operations — shared across chat and memory routes |
+| `auth_service.py` | User registration, login — bcrypt hashing, JWT issuance |
+
 ---
 
 ## API Reference
@@ -343,7 +335,6 @@ Routes are kept thin — request validation, existence checks, and response seri
 | GET | `/documents/` | List all uploaded documents with metadata |
 | DELETE | `/documents/{sha256}` | Hard delete — removes from vector store and documents table |
 
-
 ### Health
 
 | Method | Endpoint | Description |
@@ -356,7 +347,9 @@ Routes are kept thin — request validation, existence checks, and response seri
 |---|---|---|
 | POST | `/auth/register` | Register a new user — returns JWT on success, 409 if email already exists |
 | POST | `/auth/login` | Authenticate an existing user — returns JWT on success, 401 on invalid credentials |
+
 ---
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in your values.
@@ -366,10 +359,10 @@ Copy `.env.example` to `.env` and fill in your values.
 GOOGLE_API_KEY=
 
 # LangSmith
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=neurograph-ai
+LANGSMITH_TRACING=false
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=neurograph-ai
 
 # Tavily
 TAVILY_API_KEY=
@@ -399,34 +392,25 @@ ACCESS_TOKEN_EXPIRE_MINUTES=10080
 ```
 
 ---
+
 ## Local Development
 
 **Prerequisites:** Python 3.11+, pip
 
 ```bash
-# 1. Clone and navigate to backend
 cd neurograph-ai/backend
-
-# 2. Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
-
-# 4. Set up environment
 cp .env.example .env
-# Fill in your API keys in .env
-
-# 5. Run database migrations
 alembic upgrade head
-
-# 6. Run the server
 uvicorn app.main:app --reload --port 8000
 ```
 
-Swagger UI available at `http://localhost:8000/docs`
+Swagger UI: `http://localhost:8000/docs`
+
 ---
+
 ## Production Deployment (Render)
 
 1. Create a new Web Service on Render, connect your GitHub repo
@@ -443,11 +427,12 @@ Swagger UI available at `http://localhost:8000/docs`
 
 ## Observability
 
-All LLM calls, tool executions, and agent graph runs are traced automatically via LangSmith. Set `LANGCHAIN_API_KEY` and `LANGCHAIN_PROJECT` in your environment — no additional instrumentation required.
+LLM calls, tool executions, and agent graph runs are traced via LangSmith. Set `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT` in your environment — LangChain picks them up automatically.
 
 Traces are visible at `https://smith.langchain.com` under your configured project.
 
 ---
+
 ## Known Limitations and Planned Improvements
 
 | Area | Current State | Planned Improvement |
@@ -458,7 +443,9 @@ Traces are visible at `https://smith.langchain.com` under your configured projec
 | RAG retrieval | Top-k=3, no reranking | Cross-encoder reranker (e.g. Cohere Rerank) for precision |
 | Similarity threshold | Fixed at 0.5 — not validated against real queries | Evaluate against a query set and tune, or make configurable via env var |
 | LTM retrieval | Full profile injected on every request | Semantic retrieval — top-k relevant profile entries per query |
-| LTM write mechanism | Regex-parsed from model output (`MEMORY_UPDATE: key=X value=Y`) — silent drop if Gemini reformats | Structured tool call or dedicated memory-write tool |
+| LTM write mechanism | Regex-parsed from model output (`MEMORY_UPDATE: key=X value=Y`) — silent drop if Gemini reformats the sentinel line | Structured tool call or dedicated memory-write tool |
+| Graph per request | Graph and checkpointer context are rebuilt on every request — LLM singleton and static tools are reused | Lifespan-scoped checkpointer pool |
+| Retrieval routing | Prompt-driven based on injected filenames, not a learned decision | Learned or classifier-based routing |
 | Rate limiting | None | `slowapi` middleware or API gateway |
 | Tests | None | `pytest` + `httpx.AsyncClient` |
 | Thread deletion | Thread record deleted, checkpoint records remain in STM DB | Cascade delete STM checkpoint data on thread deletion |

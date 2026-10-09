@@ -9,7 +9,7 @@
 ![Pinecone](https://img.shields.io/badge/Pinecone-Production-00B388?logoColor=white)
 ![Gemini](https://img.shields.io/badge/Gemini-3.1_Flash_Lite-4285F4?logo=google&logoColor=white)
 
-A full-stack conversational AI agent with dual-layer memory and Dynamic Agentic RAG. Built on a manually constructed LangGraph ReAct graph — not a wrapper around prebuilt agent abstractions.
+A full-stack conversational AI agent with dual-layer memory and agentic RAG. Built on a manually constructed LangGraph ReAct graph — not a wrapper around prebuilt agent abstractions.
 
 **Live demo:** [neuro-graph-ai.vercel.app](https://neuro-graph-ai.vercel.app)  
 **Backend API:** [neurographai.onrender.com](https://neurographai.onrender.com)
@@ -20,7 +20,7 @@ A full-stack conversational AI agent with dual-layer memory and Dynamic Agentic 
 
 ## What This Is
 
-Most AI chat demos call an LLM and return a response. NeuroGraph AI is an agent — it reasons, decides which tools to use, executes them, observes the results, and reasons again. Memory persists across turns (STM) and across sessions (LTM). Users can upload documents at runtime and the agent decides when to search them — retrieval is a decision, not a pipeline step.
+Most AI chat demos call an LLM and return a response. NeuroGraph AI is an agent — it reasons, decides which tools to use, executes them, observes the results, and reasons again. Short-term memory persists full conversation state per thread. Long-term memory stores user facts across sessions and injects them into the system prompt on every request. Users can upload documents at runtime; the agent has a `document_search` tool it can call when the question relates to uploaded content — retrieval is a tool call, not a forced pipeline step on every message.
 
 ---
 
@@ -61,19 +61,19 @@ Most AI chat demos call an LLM and return a response. NeuroGraph AI is an agent 
 Register/login with bcrypt-hashed passwords and stateless JWT tokens. Every thread, LTM profile entry, and uploaded document is scoped to the authenticated user — enforced at the service and vector store layer. Users cannot access each other's data.
 
 **Agentic RAG — not pipeline RAG**  
-Users upload PDF or TXT files at runtime. The agent calls `document_search` only when the user is asking about document content — not on every message. Retrieval is a tool call, not a forced injection.
+Users upload PDF or TXT files at runtime. The system prompt injects the list of uploaded filenames so the agent knows what documents exist. The agent then calls `document_search` when the question relates to that content — not on every message. Retrieval is a tool call, not a forced injection.
 
 **Dual-layer memory**  
-Short-term memory (STM) via LangGraph checkpointing persists full conversation state per thread. Long-term memory (LTM) extracts and stores user facts across sessions — injected into the system prompt on every request.
+Short-term memory (STM) via LangGraph checkpointing persists full conversation state per thread. Long-term memory (LTM) is a key-value profile store: the model emits `MEMORY_UPDATE` lines in its reply, the backend parses them and upserts the values into the `user_profile` table, and the stored profile is injected into the system prompt on every subsequent request.
 
 **Manual ReAct graph**  
-Built with LangGraph's `StateGraph` directly — not `create_react_agent`. Enables custom post-graph hooks for LTM writing with request-scoped DB sessions.
+Built with LangGraph's `StateGraph` directly — not `create_react_agent`. The LTM write step runs after the graph ends, with a fresh database session, which is not possible with prebuilt agent abstractions.
 
 **Env-based store switching**  
 ChromaDB locally, Pinecone in production. SQLite locally, Postgres (Supabase) in production. Switching is entirely config-driven — no code changes between environments.
 
 **Alembic migrations**  
-Schema changes are versioned and reproducible across environments. The start command runs `alembic upgrade head` automatically on every deploy.
+Schema changes are versioned and reproducible across environments. The start command runs `alembic upgrade head` on every deploy.
 
 **SSE streaming**  
 Responses stream token-by-token. Tool execution, memory updates, and errors are distinct SSE event types — the frontend renders each differently in real time.
@@ -99,13 +99,25 @@ Responses stream token-by-token. Tool execution, memory updates, and errors are 
 
 ### Supabase Free Tier — Inactivity Pause Prevention
 
-**Problem:** Supabase's free tier automatically pauses database projects after 7 days of inactivity. A paused DB means the backend loses its connection and the app breaks entirely for any visitor.
+**Problem:** Supabase's free tier automatically pauses database projects after 7 days of inactivity. A paused DB means the backend loses its connection and the app breaks for any visitor.
 
-**Decision:** Implemented a GitHub Actions scheduled workflow (`keep-alive.yml`) that pings the Supabase REST API directly every 2 days. This generates enough DB activity to reset Supabase's inactivity clock continuously.
+**Decision:** Implemented a GitHub Actions scheduled workflow (`keep-alive.yml`) that pings the Supabase REST API every 2 days, intended to keep the project active and prevent an inactivity pause.
 
 **Why every 2 days:** Supabase pauses after 7 days. A 2-day interval gives a 5-day safety buffer — meaning 3 consecutive workflow failures would need to occur before a pause is triggered.
 
 **Why GitHub Actions over a third-party pinger:** The workflow lives in the repo, is version-controlled, and is visible to anyone reviewing the codebase. It also fails visibly in the Actions tab if the ping returns non-200 — so infrastructure issues surface as workflow failures rather than silent broken states.
+
+---
+
+## Known Limitations
+
+See the [backend README](./backend/README.md#known-limitations-and-planned-improvements) for the full limitations table. Key items:
+
+- No tests, no rate limiting, no Dockerfile
+- LTM writes are regex-parsed from model output — silent drop if the model reformats the sentinel line
+- Full message history is sent to the LLM on every turn (no trimming)
+- JWT stored in `localStorage` (XSS-vulnerable)
+- Thread deletion does not cascade to STM checkpoint records
 
 ---
 
@@ -119,8 +131,6 @@ neurograph-ai/
 │   └── README.md     # Full frontend documentation
 └── README.md         # This file
 ```
-
-Backend and frontend each have their own README covering architecture, API reference, project structure, environment variables, and deployment.
 
 ---
 
@@ -159,7 +169,7 @@ Frontend: `http://localhost:5173`
 |---|---|---|
 | `GOOGLE_API_KEY` | Gemini LLM + embeddings | Yes |
 | `TAVILY_API_KEY` | Web search tool | Yes |
-| `LANGCHAIN_API_KEY` | LangSmith tracing | Yes |
+| `LANGSMITH_API_KEY` | LangSmith tracing | Yes |
 | `PINECONE_API_KEY` | Vector store (prod only) | Yes |
 
 Leave `PINECONE_API_KEY` empty locally — ChromaDB is used automatically.  
