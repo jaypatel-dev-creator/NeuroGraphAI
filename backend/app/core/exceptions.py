@@ -44,10 +44,7 @@ class RAGException(NeuroGraphException):
 class UnauthorizedException(NeuroGraphException):
     def __init__(self, message: str = "Authentication required."):
         super().__init__(message=message, status_code=401)
-#authorization 
-class ForbiddenException(NeuroGraphException):
-    def __init__(self, message: str = "You do not have permission to access this resource."):
-        super().__init__(message=message, status_code=403)
+
 
 class UserAlreadyExistsException(NeuroGraphException):
     def __init__(self, email: str):

@@ -265,7 +265,6 @@ NeuroGraphException (base)
 ├── RAGException                  → 500 / 422
 ├── DocumentNotFoundException     → 404
 ├── UnauthorizedException         → 401
-├── ForbiddenException            → 403
 └── UserAlreadyExistsException    → 409
 ```
 
