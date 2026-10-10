@@ -29,10 +29,10 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
                 output = await tool.ainvoke(tool_input) 
                 output = str(output) # casting to string cause ToolMessage.content always requires string 
             except Exception as e:
-                output = f"Tool execution error: {str(e)}"
-                logger.error(f"Tool {tool_name} failed: {str(e)}")
+                output = f"Tool execution failed for '{tool_name}'. The service may be unavailable."
+                logger.error(f"Tool {tool_name} failed: {str(e)}", exc_info=True)
 
-        logger.info(f"Tool {tool_name} result: {output[:100]}")
+        logger.info(f"Tool {tool_name} finished — output length: {len(output)} chars")
 
 
         results.append(
@@ -42,5 +42,4 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
             )
         )
 
-    return {"messages": results} #append results to state 
- 
+    return {"messages": results} #append results to state

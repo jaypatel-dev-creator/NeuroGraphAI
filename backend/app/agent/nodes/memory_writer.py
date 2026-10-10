@@ -62,7 +62,7 @@ async def memory_writer_node(state: AgentState, db: AsyncSession, user_id: str) 
 
     except Exception as e:
         # never crash the response flow — memory write failure is non-fatal
-        logger.error(f"Memory writer failed for user {user_id}: {str(e)}")
+        logger.error(f"Memory writer failed for user {user_id}: {str(e)}", exc_info=True)
 
     # returned to chat_service.py to fire memory_update SSE event to frontend
     return saved_keys

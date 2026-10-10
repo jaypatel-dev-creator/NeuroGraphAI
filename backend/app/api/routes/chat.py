@@ -6,6 +6,7 @@ from app.db.base import AsyncSessionLocal
 from app.db.models import User
 from app.schemas.chat import ChatRequest, ChatHistoryRead
 from app.core.exceptions import ThreadNotFoundException
+from app.core.logging import get_logger
 from app.services.chat_service import (
     stream_agent_response,
     generate_title,
@@ -14,6 +15,7 @@ from app.services.chat_service import (
 from app.services.thread_service import get_thread_by_id
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 @router.post("/stream")
@@ -35,7 +37,8 @@ async def stream_chat(
                     title_thread.title = title
                     title_thread.is_titled = True
                     await title_db.commit()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Title update failed for thread {request.thread_id}: {str(e)}", exc_info=True)
                 await title_db.rollback()
 
     return StreamingResponse(
