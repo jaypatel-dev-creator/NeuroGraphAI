@@ -1,6 +1,10 @@
 import yfinance as yf
 from langchain_core.tools import tool
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @tool
 def finance(ticker: str) -> str:
@@ -25,4 +29,5 @@ def finance(ticker: str) -> str:
             f"Change: {direction} {abs(change):.2f}%"
         )
     except Exception as e:
-        return f"Finance fetch error: {str(e)}"
+        logger.error(f"finance failed for '{ticker}': {str(e)}", exc_info=True)
+        return "Stock lookup failed. The ticker may be invalid or the data service may be unavailable."

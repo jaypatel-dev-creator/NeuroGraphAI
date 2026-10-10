@@ -68,19 +68,23 @@ async def neurograph_exception_handler(
     exc: NeuroGraphException,
 ) -> JSONResponse:
     if exc.status_code >= 500:
+        # Full detail goes to the log only. Server-side messages can contain
+        # internal error text (SQL, upstream API errors), so the client never sees it.
         logger.error(
             f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}",
             exc_info=True,
         )
+        client_message = "An unexpected error occurred."
     else:
         logger.warning(
             f"{exc.__class__.__name__} on {request.method} {request.url.path}: {exc.message}"
         )
+        client_message = exc.message
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.__class__.__name__,
-            "message": exc.message,
+            "message": client_message,
         },
     )
 

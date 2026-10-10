@@ -42,7 +42,7 @@ def make_document_search_tool(user_id: str):
             return "\n\n".join(parts)
 
         except Exception as e:
-            logger.error(f"document_search failed for user {user_id}: {str(e)}")
-            return f"Document search error: {str(e)}"
+            logger.error(f"document_search failed for user {user_id}: {str(e)}", exc_info=True)
+            return "Document search failed. Please try again later."
 
     return document_search

@@ -1,6 +1,10 @@
 import httpx
 from langchain_core.tools import tool
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 @tool
 async def weather(city: str) -> str:
@@ -16,4 +20,5 @@ async def weather(city: str) -> str:
             response.raise_for_status()
             return response.text.strip()
     except Exception as e:
-        return f"Weather fetch error: {str(e)}"
+        logger.error(f"weather failed for '{city}': {str(e)}", exc_info=True)
+        return "Weather lookup failed. The city name may be invalid or the weather service may be unavailable."

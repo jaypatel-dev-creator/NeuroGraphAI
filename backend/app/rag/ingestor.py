@@ -82,7 +82,8 @@ def extract_text_from_txt(content: bytes, filename: str) -> str:
         try:
             return content.decode("latin-1")
         except Exception as e:
-            raise RAGException(f"Failed to decode '{filename}': {str(e)}", status_code=422)
+            logger.error(f"Failed to decode '{filename}': {str(e)}", exc_info=True)
+            raise RAGException(f"Failed to read '{filename}' as text.", status_code=422)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
