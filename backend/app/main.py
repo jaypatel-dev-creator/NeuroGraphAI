@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info("Tavily API key set.")
 
     # Data directories
-    if not settings.database_url:
+    if not settings.database_url: #for local, creating directory that stores both checkpoint db and neurographdb 
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True) #create data folder that holds  neurograph.db
         Path(settings.checkpoint_db_path).parent.mkdir(parents=True, exist_ok=True) #create data (already created above) that holds checkpoints.db
         logger.info(f"SQLite mode — db: {settings.sqlite_db_path}")
@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     # Agent graph compilation
     compile_graph()
 
-    # Setup LangGraph postgres checkpointer tables
+    # Setup LangGraph postgres checkpointer tables for prod cause in postgres, checkpoint tables must exist before first request while for local this is not a problem
     if settings.database_url:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         conn_string = settings.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     init_store()
 
     logger.info("NeuroGraph AI is ready.")
-    
+
     yield
 
     # --- Shutdown ---

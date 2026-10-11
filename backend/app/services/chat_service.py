@@ -62,6 +62,11 @@ def get_checkpointer_context(db_path: str):
 def parse_tool_output(tool_name: str, raw_output) -> tuple[str, list[dict]]:
     sources = []
 
+    # Some prebuilt tools (e.g. Tavily) return {"error": <exception>} instead of raising.
+    # Never forward that raw exception text to the client — tool_executor already logs it.
+    if isinstance(raw_output, dict) and "error" in raw_output:
+        return f"Tool execution failed for '{tool_name}'. The service may be unavailable.", []
+
     is_tavily = (
         "tavily" in tool_name.lower()
         or (
