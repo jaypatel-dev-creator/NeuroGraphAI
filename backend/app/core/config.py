@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Auth — JWT
     jwt_secret_key: str                 # generate with: openssl rand -hex 32
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 7   # 7 days 
+    access_token_expire_minutes: int = 60 * 24 * 7   # 7 days (min * day* total daysk) 
 
     model_config = SettingsConfigDict(
         env_file=".env", #read configs from .env file 

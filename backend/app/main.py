@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
     init_store()
 
     logger.info("NeuroGraph AI is ready.")
+    
     yield
 
     # --- Shutdown ---
@@ -75,18 +76,18 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()
+    settings = get_settings() #1st time get_settings() will be called and then cached. 
 
     app = FastAPI(
         title="NeuroGraph AI",
         description="LangGraph ReAct agent with STM, LTM, and Tools",
         version="1.0.0",
-        docs_url="/docs" if settings.app_env == "development" else None,
+        docs_url="/docs" if settings.app_env == "development" else None, #block swagger testing in production
         redoc_url=None,
         lifespan=lifespan,
     )
 
-    allowed_origins = [settings.frontend_url, "https://neuro-graph-ai.vercel.app"]
+    allowed_origins = [settings.frontend_url, "https://neuro-graph-ai.vercel.app"] #explicitly allow deployed frontend url
 #Binding middleware to main application instance 
     app.add_middleware(
         CORSMiddleware,
