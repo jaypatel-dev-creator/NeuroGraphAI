@@ -7,6 +7,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+
 # Called every turn inside reasoner_node — builds fresh system prompt with updated LTM and doc context
 def build_system_prompt(tools: list[BaseTool], ltm_context: str, doc_context: str) -> str:
     tool_descriptions = "\n".join(

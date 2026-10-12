@@ -9,3 +9,4 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]# reducer so that messages are appended rather then overwriting 
     ltm_context: str
     doc_context: str  
+    

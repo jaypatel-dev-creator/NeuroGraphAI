@@ -41,6 +41,7 @@ def _build_static_tools() -> list[BaseTool]:
     ]
 
 
+
 def get_tools(user_id: str) -> list[BaseTool]:
     return _static_tools + [make_document_search_tool(user_id)]
 
@@ -55,7 +56,7 @@ def should_use_tool(state: AgentState) -> str:
         return "tool_executor"
     return "end"
 
-
+#safety function to ensure that llm client is initialized plus static tools is initialized 
 def compile_graph() -> None:
     global _initialized, _static_tools, _base_llm
 
@@ -78,7 +79,7 @@ def compile_graph() -> None:
     _initialized = True
     logger.info("LangGraph ReAct graph builder ready.")
 
-
+#actual graph compilation 
 def get_graph_with_checkpointer(checkpointer, user_id: str):
     # Safety gate — ensures compile_graph() ran successfully at startup
     if not _initialized:

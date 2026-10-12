@@ -27,7 +27,7 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
             try:
                
                 output = await tool.ainvoke(tool_input) 
-                # some prebuilt tools (e.g. Tavily) return {"error": <exception>} instead of raising
+                #  Tavily return {"error": <exception>} . so logging  its error 
                 if isinstance(output, dict) and "error" in output:
                     err = output["error"]
                     logger.error(
@@ -36,7 +36,8 @@ async def tool_executor_node(state: AgentState, tools_by_name: dict[str, BaseToo
                     )
                     output = f"Tool execution failed for '{tool_name}'. The service may be unavailable."
                 else:
-                    output = str(output) # casting to string cause ToolMessage.content always requires string 
+                    output = str(output) 
+                    #catching exception raised for other tools 
             except Exception as e:
                 output = f"Tool execution failed for '{tool_name}'. The service may be unavailable."
                 logger.error(f"Tool {tool_name} failed: {str(e)}", exc_info=True)
