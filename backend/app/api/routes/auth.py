@@ -13,8 +13,8 @@ async def register(
     payload: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    
-    return await register_user(db, payload)
+    token = await register_user(db, email=payload.email, password=payload.password)
+    return TokenResponse(access_token=token)
 
 #log in /sign in 
 @router.post("/login", response_model=TokenResponse)
@@ -22,4 +22,5 @@ async def login(
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await login_user(db, payload)
+    token = await login_user(db, email=payload.email, password=payload.password)
+    return TokenResponse(access_token=token)

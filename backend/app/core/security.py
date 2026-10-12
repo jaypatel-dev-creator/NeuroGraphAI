@@ -7,11 +7,11 @@ from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedException
 
 
-#hashing of password 
+#hashing of password with its respective hash 
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-
+#extract salt from stored pw hash and calculate new pw hash adding that stored salt 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
@@ -29,7 +29,8 @@ def create_access_token(subject: str) -> str:
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
-#verifying access token 
+#verifying access token  => calculate new signature of came token by extracting secret key and if it matches to signature that came in token, then returns user_id
+#used in all protected routes 
 def decode_access_token(token: str) -> str:
     settings = get_settings()
     try:
