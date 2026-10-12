@@ -23,7 +23,6 @@ async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
 
         db.add(thread)
         await db.flush()
-        await db.refresh(thread) #so that auto generated field comes i.e created at and updated at 
         logger.info(f"Thread created: {thread_id} — user: {user_id}")
         return thread
     except ThreadServiceException:
@@ -81,7 +80,6 @@ async def rename_thread(db: AsyncSession, user_id: str, thread_id: str, title: s
         thread.title = title
         thread.is_titled = True
         await db.flush()
-        await db.refresh(thread)
         logger.info(f"Thread renamed: {thread.id} → {title}")
         return thread
     except ThreadServiceException:
@@ -102,7 +100,6 @@ async def delete_thread(db: AsyncSession, user_id: str, thread_id: str) -> bool:
                 Thread.user_id == user_id,
             )
         )
-        await db.flush()
         deleted = result.rowcount > 0
         if deleted:
             logger.info(f"Thread deleted: {thread_id}")

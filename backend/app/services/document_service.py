@@ -86,7 +86,6 @@ async def delete_document(db: AsyncSession, user_id: str, sha256: str) -> None:
                 Document.sha256 == sha256,
             )
         )
-        await db.flush()
         logger.info(f"Document deleted — user: {user_id} sha256: {sha256[:8]}...")
     except (RAGException, DocumentNotFoundException):
         raise

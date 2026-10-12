@@ -24,8 +24,7 @@ async def register_user(db: AsyncSession, email: str, password: str) -> str:
         hashed_password=hash_password(password),#hashing the password while storing using bcrypt 
     )
     db.add(user)
-    await db.flush()
-    await db.refresh(user)
+    await db.flush() #run the INSERT within  session , not after commit so DB errors surface here, before we log success or issue a token
 
     logger.info(f"New user registered: {user.id}")
     return create_access_token(subject=user.id)

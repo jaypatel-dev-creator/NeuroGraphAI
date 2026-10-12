@@ -60,7 +60,6 @@ async def upsert_profile_entry(
             )
 
         await db.execute(stmt)
-        await db.flush()
 
         result = await db.execute(
             select(UserProfile).where(
@@ -81,7 +80,6 @@ async def upsert_profile_entry(
 async def delete_profile(db: AsyncSession, user_id: str) -> None:
     try:
         await db.execute(delete(UserProfile).where(UserProfile.user_id == user_id))
-        await db.flush()
         logger.info(f"LTM profile cleared — user: {user_id}")
     except LTMException:      
         raise
@@ -108,7 +106,6 @@ async def delete_profile_entry(db: AsyncSession, user_id: str, key: str) -> bool
                 UserProfile.key == key,
             )
         )
-        await db.flush()
         logger.info(f"LTM entry deleted — user: {user_id} key: {key}")
         return True
     except LTMException:
