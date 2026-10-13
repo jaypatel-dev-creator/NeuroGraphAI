@@ -25,8 +25,6 @@ async def create_thread(db: AsyncSession, user_id: str, title: str) -> Thread:
         await db.flush()
         logger.info(f"Thread created: {thread_id} — user: {user_id}")
         return thread
-    except ThreadServiceException:
-        raise
     except Exception as e:
         raise ThreadServiceException(f"Failed to create thread: {str(e)}")
 
@@ -37,11 +35,9 @@ async def list_threads(db: AsyncSession, user_id: str) -> list[Thread]:
         result = await db.execute(
             select(Thread)
             .where(Thread.user_id == user_id)
-            .order_by(Thread.updated_at.desc())
+            .order_by(Thread.updated_at.desc()) #desc so that latest thread appears first 
         )
         return list(result.scalars().all())
-    except ThreadServiceException:
-        raise
     except Exception as e:
         raise ThreadServiceException(f"Failed to list threads: {str(e)}")
 
@@ -60,8 +56,6 @@ async def get_thread_by_id(db: AsyncSession, user_id: str, thread_id: str) -> Th
             )
         )
         return result.scalar_one_or_none()
-    except ThreadServiceException:
-        raise
     except Exception as e:
         raise ThreadServiceException(f"Failed to fetch thread '{thread_id}': {str(e)}")
 
@@ -104,7 +98,5 @@ async def delete_thread(db: AsyncSession, user_id: str, thread_id: str) -> bool:
         if deleted:
             logger.info(f"Thread deleted: {thread_id}")
         return deleted
-    except ThreadServiceException:
-        raise
     except Exception as e:
         raise ThreadServiceException(f"Failed to delete thread '{thread_id}': {str(e)}")
