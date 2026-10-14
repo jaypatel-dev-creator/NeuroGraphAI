@@ -13,3 +13,6 @@ def get_db_path() -> str:
 def use_postgres_checkpointer() -> bool:
     settings = get_settings()
     return bool(settings.database_url)
+
+
+

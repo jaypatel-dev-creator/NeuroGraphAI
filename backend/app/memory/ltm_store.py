@@ -10,7 +10,6 @@ from app.core.exceptions import LTMException
 logger = get_logger(__name__)
 
 
-
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 

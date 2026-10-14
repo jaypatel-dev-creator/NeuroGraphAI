@@ -10,6 +10,7 @@ from app.core.exceptions import RAGException, DocumentNotFoundException
 logger = get_logger(__name__)
 
 
+
 async def ingest_and_persist(
     db: AsyncSession,
     user_id: str,

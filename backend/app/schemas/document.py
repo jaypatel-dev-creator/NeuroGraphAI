@@ -18,3 +18,4 @@ class DocumentUploadResponse(BaseModel):
     chunk_count: int
     already_existed: bool
     message: str  # "indexed successfully — X chunks created" or "already indexed — ready to query"
+    
